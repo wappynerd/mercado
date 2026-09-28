@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mercado en vivo</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1a1a1a; --muted: #6b6b6b;
+    --border: #e3e3df; --accent: #2f5bd3; --up: #1a7f37; --down: #c62828;
+    --flash-up: rgba(26,127,55,.16); --flash-down: rgba(198,40,40,.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141414; --panel: #1d1d1d; --text: #ececec; --muted: #9a9a9a;
+      --border: #2e2e2e; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
+      --flash-up: rgba(76,194,107,.18); --flash-down: rgba(255,107,107,.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141414; --panel: #1d1d1d; --text: #ececec; --muted: #9a9a9a;
+    --border: #2e2e2e; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
+    --flash-up: rgba(76,194,107,.18); --flash-down: rgba(255,107,107,.18);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  .status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--up); } .dot.off { background: var(--down); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  input { width: 100%; padding: 9px 11px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; }
+  button { font: inherit; padding: 9px 14px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--muted); border-color: var(--border); }
+  .row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+  .row > div { flex: 1 1 260px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+  .error { color: var(--down); font-size: 13px; margin: 10px 0 0; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input { flex: 1 1 260px; width: auto; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  th:first-child, td:first-child { text-align: left; }
+  td.sym { font-weight: 600; }
+  .up { color: var(--up); } .down { color: var(--down); } .muted { color: var(--muted); }
+  tr.flash-up td { background: var(--flash-up); }
+  tr.flash-down td { background: var(--flash-down); }
+  td { transition: background .8s; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mercado en vivo</h1>
+    <span class="status"><span class="dot" id="dot"></span><span id="statusText">Desconectado</span></span>
+  </header>
+
+  <!-- Login: el token se escribe acá y queda guardado solo en este navegador -->
+  <section class="card" id="login">
+    <form id="loginForm" class="row">
+      <div>
+        <label for="token">Token de MarketDataHub (mdh_…)</label>
+        <input id="token" type="password" autocomplete="off" placeholder="mdh_..." required>
+      </div>
+      <button type="submit">Entrar</button>
+    </form>
+    <p class="hint">El token se guarda solo en este navegador. No viaja a ningún otro lado más que a CGR.</p>
+    <p class="error" id="loginError" hidden></p>
+  </section>
+
+  <section id="app" hidden>
+    <form class="toolbar" id="symForm">
+      <input id="symbols" aria-label="Símbolos" placeholder="AL30 - CI, GD30 - CI, GGAL - 24hs">
+      <button type="submit">Actualizar</button>
+      <button type="button" class="ghost" id="logout">Salir</button>
+    </form>
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Símbolo</th><th>Último</th><th>Var %</th><th>Compra</th><th>Venta</th><th>Vol $</th><th>Hora</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="lastMsg"></p>
+  </section>
+</main>
+
+<script>
+const WS_URL = "wss://dash.cgrconsult.ing/ws/feed";
+const DEFAULT_SYMBOLS = "AL30 - CI, GD30 - CI, AL30 - 24hs, GD30 - 24hs, GGAL - 24hs, YPFD - 24hs";
+
+// localStorage puede fallar (modo incógnito, etc.): la página igual funciona.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+const $ = (id) => document.getElementById(id);
+let ws = null, retry = 0, retryTimer = null, wanted = [];
+const state = {};   // símbolo pedido -> marketData
+
+const fmt = (n, d = 2) => n == null ? "—" : n.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtVol = (n) => n == null ? "—" : n >= 1e9 ? fmt(n / 1e9, 1) + " MM" : n >= 1e6 ? fmt(n / 1e6, 1) + " M" : fmt(n, 0);
+const hora = (ms) => ms ? new Date(ms).toLocaleTimeString("es-AR", { hour12: false }) : "—";
+
+function setStatus(kind, text) {
+  $("dot").className = "dot " + (kind || "");
+  $("statusText").textContent = text;
+}
+
+function parseSymbols(s) {
+  return s.split(",").map(x => x.trim()).filter(Boolean);
+}
+
+// CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pediste.
+function matchSymbol(full) {
+  return wanted.find(w => full === w || full.endsWith(" - " + w));
+}
+
+function renderTable() {
+  $("rows").innerHTML = wanted.map(sym => `
+    <tr id="r-${CSS.escape(sym)}">
+      <td class="sym">${sym}</td>
+      <td class="la muted">—</td><td class="var">—</td>
+      <td class="bi">—</td><td class="of">—</td>
+      <td class="ev">—</td><td class="t muted">—</td>
+    </tr>`).join("");
+}
+
+function updateRow(sym, md) {
+  const prev = state[sym];
+  state[sym] = md;
+  const tr = document.getElementById("r-" + CSS.escape(sym));
+  if (!tr) return;
+  const last = md.LA?.price ?? md.IV ?? null;
+  const close = md.CL?.price ?? null;
+  const chg = last != null && close ? (last / close - 1) * 100 : null;
+  tr.querySelector(".la").textContent = fmt(last);
+  tr.querySelector(".la").className = "la";
+  const v = tr.querySelector(".var");
+  v.textContent = chg == null ? "—" : (chg > 0 ? "+" : "") + fmt(chg) + "%";
+  v.className = "var " + (chg > 0 ? "up" : chg < 0 ? "down" : "muted");
+  tr.querySelector(".bi").textContent = fmt(md.BI?.[0]?.price);
+  tr.querySelector(".of").textContent = fmt(md.OF?.[0]?.price);
+  tr.querySelector(".ev").textContent = fmtVol(md.EV);
+  tr.querySelector(".t").textContent = hora(md.LA?.date);
+
+  const prevLast = prev?.LA?.price;
+  if (prevLast != null && last != null && last !== prevLast) {
+    tr.classList.remove("flash-up", "flash-down");
+    void tr.offsetWidth;
+    tr.classList.add(last > prevLast ? "flash-up" : "flash-down");
+    setTimeout(() => tr.classList.remove("flash-up", "flash-down"), 900);
+  }
+}
+
+function handle(msg) {
+  if (msg.type === "snapshot") {
+    for (const [full, m] of Object.entries(msg.data || {})) {
+      const sym = matchSymbol(full);
+      if (sym) updateRow(sym, m.marketData || {});
+    }
+  } else if (msg.type === "Md") {
+    const sym = matchSymbol(msg.instrumentId?.symbol || "");
+    if (sym) updateRow(sym, { ...(state[sym] || {}), ...msg.marketData });
+  } else if (msg.type === "system" && JSON.stringify(msg).includes("market_open_reset")) {
+    for (const k in state) delete state[k];
+    renderTable();
+  }
+  $("lastMsg").textContent = "Último dato recibido: " + new Date().toLocaleTimeString("es-AR", { hour12: false });
+}
+
+function connect() {
+  const token = store.get("cgr_token");
+  if (!token) return showLogin();
+  clearTimeout(retryTimer);
+  if (ws) { ws.onclose = null; ws.close(); }
+
+  setStatus("", "Conectando…");
+  const url = `${WS_URL}?symbols=${encodeURIComponent(wanted.join(","))}&token=${encodeURIComponent(token)}`;
+  ws = new WebSocket(url);
+
+  ws.onopen = () => { retry = 0; setStatus("on", "En vivo"); };
+  ws.onmessage = (e) => { try { handle(JSON.parse(e.data)); } catch {} };
+  ws.onclose = (e) => {
+    ws = null;
+    if (e.code === 4003) {            // token revocado o inválido: no reintentar
+      store.del("cgr_token");
+      showLogin("CGR rechazó el token (código 4003). Revisalo e ingresalo de nuevo.");
+      return;
+    }
+    const wait = Math.min(30, 2 ** retry++);
+    setStatus("off", `Desconectado — reintento en ${wait}s`);
+    retryTimer = setTimeout(connect, wait * 1000);
+  };
+}
+
+function showLogin(error) {
+  clearTimeout(retryTimer);
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  setStatus("", "Desconectado");
+  $("app").hidden = true;
+  $("login").hidden = false;
+  $("loginError").hidden = !error;
+  $("loginError").textContent = error || "";
+}
+
+function showApp() {
+  $("login").hidden = true;
+  $("app").hidden = false;
+  const saved = store.get("cgr_symbols") || DEFAULT_SYMBOLS;
+  $("symbols").value = saved;
+  wanted = parseSymbols(saved);
+  renderTable();
+  connect();
+}
+
+$("loginForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  store.set("cgr_token", $("token").value.trim());
+  $("token").value = "";
+  showApp();
+});
+
+$("symForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  store.set("cgr_symbols", $("symbols").value);
+  wanted = parseSymbols($("symbols").value);
+  for (const k in state) delete state[k];
+  renderTable();
+  connect();
+});
+
+$("logout").addEventListener("click", () => {
+  store.del("cgr_token");
+  showLogin();
+});
+
+if (store.get("cgr_token")) showApp(); else showLogin();
+</script>
+</body>
+</html>
