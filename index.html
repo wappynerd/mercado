@@ -354,9 +354,18 @@ const cero = (v, txt) => /[1-9]/.test(txt) ? v : 0;
 // Píldora de variación. `txt` va sin signo: la flecha ya lo dice.
 const pill = (v, txt, pol) => { v = cero(v, txt); return `<span class="pill ${tono(v, pol)}">${flecha(v)} ${txt}</span>`; };
 
+// Pedido con límite de tiempo: si la fuente no contesta, se sigue sin ella en vez de
+// dejar la página esperando (datos.gob.ar a veces se cuelga sin responder).
+async function pedir(url, ms = 15000) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { cache: "no-store", signal: ctl.signal }); }
+  catch (e) { throw ctl.signal.aborted ? new Error("la fuente no respondió a tiempo") : e; }
+  finally { clearTimeout(t); }
+}
+
 // no-store: sin esto el navegador puede reusar una respuesta vieja y el dato queda congelado.
-async function getJSON(url) {
-  const r = await fetch(url, { cache: "no-store" });
+async function getJSON(url, ms) {
+  const r = await pedir(url, ms);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -1143,7 +1152,7 @@ $("planillaLink").href = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edi
 async function hoja(nombre, rango) {
   let t;
   try {
-    const r = await fetch(sheetUrl(nombre, rango), { cache: "no-store" });
+    const r = await pedir(sheetUrl(nombre, rango));
     t = await r.text();
   } catch { throw new Error("privada"); }
   if (!t.includes("setResponse")) throw new Error("privada");
@@ -1363,7 +1372,7 @@ function drawMulti(el, o) {
 // Cómo se llevó el libro a pesos de hoy, para las notas al pie.
 function textoIPC() {
   if (!B.ipcHoy) return "sin ajuste por inflación (no se pudo leer el IPC)";
-  const base = `reexpresado a pesos de hoy con el IPC de ${fMesL(B.ipcUlt.f)} (INDEC)`;
+  const base = `reexpresado a pesos de hoy con el IPC de ${fMesL(B.ipcUlt.f)} (${B.ipcUlt.fuente})`;
   if (!B.ipcHoy.est) return base;
   return `${base} <span class="est">+ ${B.ipcHoy.faltan === 1 ? "un mes estimado" : `${B.ipcHoy.faltan} meses estimados`} con el REM (${pct(B.ipcHoy.pim, 1)} mensual)</span>, que se reemplaza solo cuando INDEC publica`;
 }
@@ -1405,6 +1414,31 @@ function bancosEnVivo() {
   });
 }
 
+// IPC a hoy. Base: el último IPC mensual de INDEC (datos.gob.ar); si no responde, el último
+// trimestre de la tabla de IPC de la hoja INPUTS. Los meses que todavía no se publicaron se
+// estiman con la inflación que espera el REM (su mediana a 12 meses, llevada a mensual).
+async function cargarIPC() {
+  const [indec, rem] = await Promise.allSettled([
+    datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, haceDias(240)),
+    bcra(29, haceDias(120)),
+  ]);
+  if (indec.status === "fulfilled" && indec.value.n.length) {
+    B.ipcUlt = { ...indec.value.n.at(-1), fuente: "INDEC" };
+  } else {
+    const q = Object.keys(B.ipc).sort().at(-1);
+    if (!q) { B.ipcUlt = B.ipcHoy = null; return; }
+    const mes = String(+q.slice(5) * 3).padStart(2, "0");
+    B.ipcUlt = { f: `${q.slice(0, 4)}-${mes}-01`, v: B.ipc[q], fuente: "hoja INPUTS; INDEC no respondió" };
+  }
+  const h = hoy(), f = B.ipcUlt.f;
+  const faltan = (+h.slice(0, 4) * 12 + +h.slice(5, 7)) - (+f.slice(0, 4) * 12 + +f.slice(5, 7));
+  const r = rem.status === "fulfilled" ? rem.value : [];
+  const pim = r.length ? (1 + r.at(-1).v / 100) ** (1 / 12) - 1 : null;
+  B.ipcHoy = faltan > 0 && pim != null
+    ? { v: B.ipcUlt.v * (1 + pim) ** faltan, est: true, faltan, pim }
+    : { v: B.ipcUlt.v, est: false };
+}
+
 async function cargarBancos() {
   $("bancosEstado").textContent = "Leyendo la planilla…";
   try {
@@ -1417,23 +1451,6 @@ async function cargarBancos() {
     B.data = data.filter(esFila);
     B.ipc = Object.fromEntries(ipc.filter(r => r.trimestre && esNum(r.indice_IPC)).map(r => [r.trimestre, r.indice_IPC]));
     B.bancos = [...new Set(B.calc.map(r => r.ticker))].filter(t => ultimo(t));
-    // IPC a hoy: el último publicado por INDEC y, para los meses que todavía no salieron,
-    // la inflación mensual que espera el REM (su mediana a 12 meses, llevada a mensual).
-    try {
-      const [s, rem] = await Promise.all([
-        datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, haceDias(240)),
-        bcra(29, haceDias(120)).catch(() => []),
-      ]);
-      B.ipcUlt = s.n.at(-1);
-      const h = hoy(), f = B.ipcUlt.f;
-      const faltan = (+h.slice(0, 4) * 12 + +h.slice(5, 7)) - (+f.slice(0, 4) * 12 + +f.slice(5, 7));
-      const pim = rem.length ? (1 + rem.at(-1).v / 100) ** (1 / 12) - 1 : null;
-      B.ipcHoy = faltan > 0 && pim != null
-        ? { v: B.ipcUlt.v * (1 + pim) ** faltan, est: true, faltan, pim }
-        : { v: B.ipcUlt.v, est: false };
-    } catch { B.ipcUlt = null; B.ipcHoy = null; }
-    try { await preciosPublicos(); } catch (e) { console.error("data912", e); }
-
     // Si la planilla suma o saca bancos, el feed se reengancha con la lista nueva.
     const syms = B.bancos.map(t => `${t} - 24hs`);
     if (syms.join() !== BANK_SYMS.join()) {
@@ -1444,10 +1461,19 @@ async function cargarBancos() {
     B.cargado = true;
     $("bancosError").hidden = true;
     $("bancosBody").hidden = false;
+    pintarBancos();   // ya con la planilla; IPC y precios se completan cuando lleguen
+    const leida = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos.`;
+    $("bancosEstado").textContent = `${leida} Buscando precios e IPC…`;
+
+    await Promise.allSettled([
+      cargarIPC(),
+      preciosPublicos().catch(e => console.error("data912", e)),
+    ]);
     pintarBancos();
     const vivo = store.get("cgr_token") ? "Precios en vivo desde CGR."
-      : "Precios de BYMA vía data912, cada minuto. Con tu token de CGR (pestaña Mercado) van en vivo.";
-    $("bancosEstado").textContent = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos. ${vivo}`;
+      : Object.keys(PX).length ? "Precios de BYMA vía data912, cada minuto. Con tu token de CGR (pestaña Mercado) van en vivo."
+      : "No se pudo leer data912: se usan los precios de la planilla.";
+    $("bancosEstado").textContent = `${leida} ${vivo}`;
   } catch (e) {
     console.error(e);
     $("bancosBody").hidden = !B.cargado;
