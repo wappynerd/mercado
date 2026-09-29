@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mercado en vivo</title>
+<title>Mercado y macro</title>
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1a1a1a; --muted: #6b6b6b;
-    --border: #e3e3df; --accent: #2f5bd3; --up: #1a7f37; --down: #c62828;
+    --border: #e3e3df; --grid: #eeeeea; --accent: #2f5bd3; --up: #1a7f37; --down: #c62828;
     --flash-up: rgba(26,127,55,.16); --flash-down: rgba(198,40,40,.16);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #141414; --panel: #1d1d1d; --text: #ececec; --muted: #9a9a9a;
-      --border: #2e2e2e; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
+      --border: #2e2e2e; --grid: #262626; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
       --flash-up: rgba(76,194,107,.18); --flash-down: rgba(255,107,107,.18);
     }
   }
   :root[data-theme="dark"] {
     --bg: #141414; --panel: #1d1d1d; --text: #ececec; --muted: #9a9a9a;
-    --border: #2e2e2e; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
+    --border: #2e2e2e; --grid: #262626; --accent: #7aa2ff; --up: #4cc26b; --down: #ff6b6b;
     --flash-up: rgba(76,194,107,.18); --flash-down: rgba(255,107,107,.18);
   }
   * { box-sizing: border-box; }
@@ -27,9 +27,12 @@
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   h1 { font-size: 20px; margin: 0; }
+  .tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
+  .tabs button { background: transparent; border: 0; color: var(--muted); padding: 6px 14px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: #fff; }
   .status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
   .dot.on { background: var(--up); } .dot.off { background: var(--down); }
@@ -42,7 +45,7 @@
   .row > div { flex: 1 1 260px; }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
   .error { color: var(--down); font-size: 13px; margin: 10px 0 0; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .toolbar input { flex: 1 1 260px; width: auto; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -55,49 +58,94 @@
   tr.flash-down td { background: var(--flash-down); }
   td { transition: background .8s; }
   [hidden] { display: none !important; }
+
+  /* Macro */
+  .macro-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .macro-bar p { margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 28px 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+  .mcard { padding: 14px 14px 10px; min-width: 0; }
+  .mhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .mhead h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .src { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .mval { font-size: 26px; font-weight: 650; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .msub { font-size: 13px; color: var(--muted); min-height: 18px; }
+  .mfoot { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .live { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--up); border: 1px solid var(--up); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .chart { position: relative; height: 140px; margin-top: 8px; touch-action: pan-y; }
+  .chart svg { display: block; }
+  .chart .gl { stroke: var(--grid); stroke-width: 1; }
+  .chart .zero { stroke: var(--muted); stroke-width: 1; }
+  .chart .ax { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .chart .ln { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .chart .ref { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .chart .b { fill: var(--accent); }
+  .chart .b.pos { fill: var(--up); } .chart .b.neg { fill: var(--down); }
+  .chart .b.partial { opacity: .45; }
+  .chart .xh { stroke: var(--muted); stroke-width: 1; }
+  .chart .pt { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+  .tip { position: absolute; top: 0; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); font-variant-numeric: tabular-nums; }
+  .err { color: var(--down); font-size: 13px; }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Mercado en vivo</h1>
+    <h1>Research</h1>
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="mercado">Mercado</button>
+      <button type="button" role="tab" data-tab="macro">Macro</button>
+    </nav>
     <span class="status"><span class="dot" id="dot"></span><span id="statusText">Desconectado</span></span>
   </header>
 
-  <!-- Login: el token se escribe acá y queda guardado solo en este navegador -->
-  <section class="card" id="login">
-    <form id="loginForm" class="row">
-      <div>
-        <label for="token">Token de MarketDataHub (mdh_…)</label>
-        <input id="token" type="password" autocomplete="off" placeholder="mdh_..." required>
-      </div>
-      <button type="submit">Entrar</button>
-    </form>
-    <p class="hint">El token se guarda solo en este navegador. No viaja a ningún otro lado más que a CGR.</p>
-    <p class="error" id="loginError" hidden></p>
-  </section>
+  <!-- ============================ MERCADO ============================ -->
+  <div id="tab-mercado" hidden>
+    <!-- Login: el token se escribe acá y queda guardado solo en este navegador -->
+    <section class="card" id="login">
+      <form id="loginForm" class="row">
+        <div>
+          <label for="token">Token de MarketDataHub (mdh_…)</label>
+          <input id="token" type="password" autocomplete="off" placeholder="mdh_..." required>
+        </div>
+        <button type="submit">Entrar</button>
+      </form>
+      <p class="hint">El token se guarda solo en este navegador. No viaja a ningún otro lado más que a CGR.</p>
+      <p class="error" id="loginError" hidden></p>
+    </section>
 
-  <section id="app" hidden>
-    <form class="toolbar" id="symForm">
-      <input id="symbols" aria-label="Símbolos" placeholder="AL30 - CI, GD30 - CI, GGAL - 24hs">
-      <button type="submit">Actualizar</button>
-      <button type="button" class="ghost" id="logout">Salir</button>
-    </form>
-    <div class="card table-wrap">
-      <table>
-        <thead>
-          <tr><th>Símbolo</th><th>Último</th><th>Var %</th><th>Compra</th><th>Venta</th><th>Vol $</th><th>Hora</th></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <section id="app" hidden>
+      <form class="toolbar" id="symForm">
+        <input id="symbols" aria-label="Símbolos" placeholder="AL30 - CI, GD30 - CI, GGAL - 24hs">
+        <button type="submit">Actualizar</button>
+        <button type="button" class="ghost" id="logout">Salir</button>
+      </form>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr><th>Símbolo</th><th>Último</th><th>Var %</th><th>Compra</th><th>Venta</th><th>Vol $</th><th>Hora</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="lastMsg"></p>
+    </section>
+  </div>
+
+  <!-- ============================= MACRO ============================= -->
+  <div id="tab-macro" hidden>
+    <div class="macro-bar">
+      <p class="hint" id="macroEstado"></p>
+      <button type="button" class="ghost" id="macroRefresh">Actualizar</button>
     </div>
-    <p class="hint" id="lastMsg"></p>
-  </section>
+    <div id="macro"></div>
+  </div>
 </main>
 
 <script>
-const WS_URL = "wss://dash.cgrconsult.ing/ws/feed";
-const DEFAULT_SYMBOLS = "AL30 - CI, GD30 - CI, AL30 - 24hs, GD30 - 24hs, GGAL - 24hs, YPFD - 24hs";
+/* ======================================================================= */
+/*  Utilidades                                                             */
+/* ======================================================================= */
 
 // localStorage puede fallar (modo incógnito, etc.): la página igual funciona.
 const store = {
@@ -105,12 +153,47 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
-
 const $ = (id) => document.getElementById(id);
-let ws = null, retry = 0, retryTimer = null, wanted = [];
-const state = {};   // símbolo pedido -> marketData
 
-const fmt = (n, d = 2) => n == null ? "—" : n.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const isoLocal = (d) => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const hoy = () => isoLocal(new Date());
+const haceDias = (n) => isoLocal(new Date(Date.now() - n * 864e5));
+
+const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const MES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const fDia = (f) => `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(2, 4)}`;
+const fMes = (f) => `${MES[+f.slice(5, 7) - 1]} ${f.slice(2, 4)}`;
+const fTrim = (f) => `${Math.floor((+f.slice(5, 7) - 1) / 3) + 1}T ${f.slice(2, 4)}`;
+
+const num = (n, d = 0) => n == null || isNaN(n) ? "—"
+  : n.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const signo = (x) => x > 0 ? "+" : "";
+const pct = (x, d = 1, conSigno = false) => {
+  if (x == null || isNaN(x)) return "—";
+  const r = +(x * 100).toFixed(d) || 0;   // evita "-0,0%"
+  return (conSigno ? signo(r) : "") + num(r, d) + "%";
+};
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+/* ======================================================================= */
+/*  MERCADO: feed en vivo de CGR                                           */
+/* ======================================================================= */
+
+const WS_URL = "wss://dash.cgrconsult.ing/ws/feed";
+const DEFAULT_SYMBOLS = "AL30 - CI, GD30 - CI, AL30 - 24hs, GD30 - 24hs, GGAL - 24hs, YPFD - 24hs";
+// Para MEP y CCL en vivo: AL30 en pesos, en dólares MEP (D) y en cable (C).
+const FX = { ars: "AL30 - 24hs", mep: "AL30D - 24hs", ccl: "AL30C - 24hs" };
+const FX_SYMS = Object.values(FX);
+
+let ws = null, retry = 0, retryTimer = null, wanted = [];
+const state = {};   // símbolo pedido -> marketData acumulado
+
+const fmt = (n, d = 2) => num(n, d);
 const fmtVol = (n) => n == null ? "—" : n >= 1e9 ? fmt(n / 1e9, 1) + " MM" : n >= 1e6 ? fmt(n / 1e6, 1) + " M" : fmt(n, 0);
 const hora = (ms) => ms ? new Date(ms).toLocaleTimeString("es-AR", { hour12: false }) : "—";
 
@@ -119,13 +202,12 @@ function setStatus(kind, text) {
   $("statusText").textContent = text;
 }
 
-function parseSymbols(s) {
-  return s.split(",").map(x => x.trim()).filter(Boolean);
-}
+const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS])];
 
-// CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pediste.
+// CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
-  return wanted.find(w => full === w || full.endsWith(" - " + w));
+  return suscriptos().find(w => full === w || full.endsWith(" - " + w));
 }
 
 function renderTable() {
@@ -138,9 +220,7 @@ function renderTable() {
     </tr>`).join("");
 }
 
-function updateRow(sym, md) {
-  const prev = state[sym];
-  state[sym] = md;
+function paintRow(sym, md, prev) {
   const tr = document.getElementById("r-" + CSS.escape(sym));
   if (!tr) return;
   const last = md.LA?.price ?? md.IV ?? null;
@@ -149,7 +229,7 @@ function updateRow(sym, md) {
   tr.querySelector(".la").textContent = fmt(last);
   tr.querySelector(".la").className = "la";
   const v = tr.querySelector(".var");
-  v.textContent = chg == null ? "—" : (chg > 0 ? "+" : "") + fmt(chg) + "%";
+  v.textContent = chg == null ? "—" : signo(chg) + fmt(chg) + "%";
   v.className = "var " + (chg > 0 ? "up" : chg < 0 ? "down" : "muted");
   tr.querySelector(".bi").textContent = fmt(md.BI?.[0]?.price);
   tr.querySelector(".of").textContent = fmt(md.OF?.[0]?.price);
@@ -165,15 +245,22 @@ function updateRow(sym, md) {
   }
 }
 
+function recibir(sym, md, reemplazar) {
+  const prev = state[sym];
+  state[sym] = reemplazar ? md : { ...(prev || {}), ...md };
+  if (wanted.includes(sym)) paintRow(sym, state[sym], prev);
+  if (FX_SYMS.includes(sym)) fxEnVivo();
+}
+
 function handle(msg) {
   if (msg.type === "snapshot") {
     for (const [full, m] of Object.entries(msg.data || {})) {
       const sym = matchSymbol(full);
-      if (sym) updateRow(sym, m.marketData || {});
+      if (sym) recibir(sym, m.marketData || {}, true);
     }
   } else if (msg.type === "Md") {
     const sym = matchSymbol(msg.instrumentId?.symbol || "");
-    if (sym) updateRow(sym, { ...(state[sym] || {}), ...msg.marketData });
+    if (sym) recibir(sym, msg.marketData || {}, false);
   } else if (msg.type === "system" && JSON.stringify(msg).includes("market_open_reset")) {
     for (const k in state) delete state[k];
     renderTable();
@@ -188,7 +275,7 @@ function connect() {
   if (ws) { ws.onclose = null; ws.close(); }
 
   setStatus("", "Conectando…");
-  const url = `${WS_URL}?symbols=${encodeURIComponent(wanted.join(","))}&token=${encodeURIComponent(token)}`;
+  const url = `${WS_URL}?symbols=${encodeURIComponent(suscriptos().join(","))}&token=${encodeURIComponent(token)}`;
   ws = new WebSocket(url);
 
   ws.onopen = () => { retry = 0; setStatus("on", "En vivo"); };
@@ -209,11 +296,13 @@ function connect() {
 function showLogin(error) {
   clearTimeout(retryTimer);
   if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  for (const k in state) delete state[k];
   setStatus("", "Desconectado");
   $("app").hidden = true;
   $("login").hidden = false;
   $("loginError").hidden = !error;
   $("loginError").textContent = error || "";
+  fxEnVivo();
 }
 
 function showApp() {
@@ -247,7 +336,499 @@ $("logout").addEventListener("click", () => {
   showLogin();
 });
 
+/* ======================================================================= */
+/*  MACRO: fuentes                                                         */
+/* ======================================================================= */
+
+const BCRA = "https://api.bcra.gob.ar/estadisticas/v4.0/monetarias/";
+const DATOS = "https://apis.datos.gob.ar/series/api/series/";
+
+// Serie del BCRA como [{f, v}] ascendente. Algunas (las bandas) traen fechas
+// futuras ya fijadas: se cortan en hoy.
+async function bcra(id, desde) {
+  const out = [], h = hoy();
+  for (let offset = 0; ; offset += 1000) {
+    const b = await getJSON(`${BCRA}${id}?desde=${desde}&hasta=${h}&limit=1000&offset=${offset}`);
+    const det = b.results?.[0]?.detalle || [];
+    out.push(...det.map(o => ({ f: o.fecha, v: o.valor })));
+    if (!det.length || offset + 1000 >= (b.metadata?.resultset?.count || 0)) break;
+  }
+  return out.filter(p => p.f <= h).sort((a, b) => a.f < b.f ? -1 : 1);
+}
+
+// Varias series de datos.gob.ar en un solo pedido. `mapa` es {nombre: "id[:modo]"}.
+async function datosGob(mapa, desde) {
+  const claves = Object.keys(mapa);
+  const b = await getJSON(`${DATOS}?ids=${claves.map(k => mapa[k]).join(",")}&start_date=${desde}&format=json&limit=5000`);
+  const out = {};
+  claves.forEach((k, i) => {
+    out[k] = b.data.filter(r => r[i + 1] != null).map(r => ({ f: r[0], v: r[i + 1] }));
+  });
+  return out;
+}
+
+// Riesgo país: ámbito trae el dato del día. Si falla, argentinadatos (1 día de atraso).
+async function riesgoPais() {
+  const parse = (s) => parseFloat(String(s).replace(/\./g, "").replace(",", "."));
+  const aIso = (s) => `${s.slice(6, 10)}-${s.slice(3, 5)}-${s.slice(0, 2)}`;
+  try {
+    const [ult, hist] = await Promise.all([
+      getJSON("https://mercados.ambito.com/riesgopais/variacion"),
+      getJSON(`https://mercados.ambito.com/riesgopais/historico-general/${haceDias(730)}/${hoy()}`),
+    ]);
+    const serie = hist.slice(1).map(r => ({ f: aIso(r[0]), v: parse(r[1]) }))
+      .filter(p => !isNaN(p.v)).sort((a, b) => a.f < b.f ? -1 : 1);
+    const u = { f: aIso(ult.fecha), v: parse(ult.ultimo) };
+    if (!serie.length || u.f > serie.at(-1).f) serie.push(u);
+    return { serie, fuente: "ámbito" };
+  } catch {
+    const d = await getJSON("https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais");
+    return { serie: d.filter(p => p.fecha >= haceDias(730)).map(p => ({ f: p.fecha, v: p.valor })), fuente: "argentinadatos" };
+  }
+}
+
+async function dolarHist(casa) {
+  const d = await getJSON(`https://api.argentinadatos.com/v1/cotizaciones/dolares/${casa}`);
+  const desde = haceDias(365);
+  return d.filter(p => p.fecha >= desde && p.venta != null).map(p => ({ f: p.fecha, v: p.venta }));
+}
+
+/* ======================================================================= */
+/*  MACRO: gráficos (SVG a mano, con tooltip)                              */
+/* ======================================================================= */
+
+const charts = new Map();   // elemento -> [pts, opciones], para redibujar al cambiar el ancho
+
+function niceTicks(lo, hi, n = 3) {
+  const raw = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw)), r = raw / mag;
+  const step = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * mag;
+  const ticks = [];
+  for (let t = Math.floor(lo / step) * step; t <= hi + step * 0.001; t += step) ticks.push(+t.toFixed(10));
+  if (ticks.at(-1) < hi) ticks.push(ticks.at(-1) + step);
+  return ticks;
+}
+
+function chart(el, pts, o) {
+  charts.set(el, [pts, o]);
+  drawChart(el, pts, o);
+}
+
+function drawChart(el, pts, o) {
+  if (!pts.length || !el.clientWidth) return;
+  const W = el.clientWidth, H = 140, L = 44, R = 6, T = 8, B = 20;
+  const pw = W - L - R, ph = H - T - B, n = pts.length, bar = o.type === "bar";
+  const fx = o.fx || fDia, fv = o.fmt, fa = o.fmtAxis || o.fmt;
+
+  // Líneas de referencia (ej. banda cambiaria) alineadas por fecha con la serie.
+  const refs = (o.refs || []).map(r => {
+    const m = new Map(r.pts.map(p => [p.f, p.v]));
+    return { label: r.label, vals: pts.map(p => m.has(p.f) ? m.get(p.f) : null) };
+  });
+
+  const vals = pts.map(p => p.v).concat(...refs.map(r => r.vals.filter(v => v != null)));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (bar) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const ticks = niceTicks(lo, hi);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks.at(-1));
+
+  const y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
+  const bw = pw / n;
+  const x = (i) => bar ? L + bw * i + bw / 2 : L + (n === 1 ? pw / 2 : i * pw / (n - 1));
+  const linea = (vs) => {
+    let d = "", pen = false;
+    vs.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      pen = true;
+    });
+    return d;
+  };
+
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label || ""}">`;
+  for (const t of ticks) {
+    s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/>`;
+    s += `<text class="ax" x="${L - 6}" y="${y(t) + 3.5}" text-anchor="end">${fa(t)}</text>`;
+  }
+  if (bar) {
+    const w = Math.max(1, bw - 2), rx = Math.min(2, w / 4);
+    pts.forEach((p, i) => {
+      const y0 = y(0), y1 = y(p.v);
+      const cls = "b" + (o.signed ? (p.v >= 0 ? " pos" : " neg") : "") + (o.partialLast && i === n - 1 ? " partial" : "");
+      s += `<rect class="${cls}" x="${(x(i) - w / 2).toFixed(1)}" y="${Math.min(y0, y1).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, Math.abs(y1 - y0)).toFixed(1)}" rx="${rx}"/>`;
+    });
+    if (lo < 0) s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  } else {
+    for (const r of refs) s += `<path class="ref" d="${linea(r.vals)}"/>`;
+    s += `<path class="ln" d="${linea(pts.map(p => p.v))}"/>`;
+  }
+  s += `<text class="ax" x="${L}" y="${H - 5}">${fx(pts[0].f)}</text>`;
+  s += `<text class="ax" x="${W - R}" y="${H - 5}" text-anchor="end">${fx(pts.at(-1).f)}</text>`;
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/>`;
+  if (!bar) s += `<circle class="pt" r="4" visibility="hidden"/>`;
+  s += `</svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), pt = el.querySelector(".pt"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const px = e.clientX - svg.getBoundingClientRect().left;
+    let i = bar ? Math.floor((px - L) / bw) : Math.round((px - L) / (pw / Math.max(1, n - 1)));
+    i = Math.max(0, Math.min(n - 1, i));
+    const p = pts[i], cx = x(i);
+    xh.setAttribute("x1", cx); xh.setAttribute("x2", cx); xh.setAttribute("visibility", "visible");
+    if (pt) { pt.setAttribute("cx", cx); pt.setAttribute("cy", y(p.v)); pt.setAttribute("visibility", "visible"); }
+    let html = `<span class="muted">${fx(p.f)}</span> <b>${fv(p.v)}</b>`;
+    for (const r of refs) if (r.vals[i] != null) html += `<br><span class="muted">${r.label}</span> ${fv(r.vals[i])}`;
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(W - tw, cx - tw / 2)) + "px";
+  };
+  el.onpointerleave = () => {
+    xh.setAttribute("visibility", "hidden");
+    if (pt) pt.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  };
+}
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(redibujar, 150);
+});
+function redibujar() { for (const [el, [pts, o]] of charts) drawChart(el, pts, o); }
+
+/* ======================================================================= */
+/*  MACRO: tarjetas                                                        */
+/* ======================================================================= */
+
+const SECCIONES = [
+  ["Dólar", [
+    ["mayorista", "Mayorista A3500", "BCRA"],
+    ["mep", "Dólar MEP", "dolarapi"],
+    ["ccl", "Dólar CCL", "dolarapi"],
+    ["blue", "Dólar blue", "dolarapi"],
+  ]],
+  ["Reservas y riesgo", [
+    ["reservas", "Reservas brutas", "BCRA"],
+    ["compras", "Compras del BCRA", "BCRA"],
+    ["riesgo", "Riesgo país", "ámbito"],
+  ]],
+  ["Tasas", [
+    ["tamar", "TAMAR bancos privados", "BCRA"],
+    ["badlar", "BADLAR bancos privados", "BCRA"],
+  ]],
+  ["Precios", [
+    ["ipc", "Inflación mensual", "INDEC"],
+    ["nucleo", "Inflación núcleo", "INDEC"],
+    ["rem", "Inflación esperada 12 meses", "BCRA · REM"],
+  ]],
+  ["Actividad y empleo", [
+    ["emae", "Actividad (EMAE)", "INDEC"],
+    ["ipi", "Industria (IPI)", "INDEC"],
+    ["salarios", "Salarios reales", "INDEC"],
+    ["desempleo", "Desempleo", "INDEC · EPH"],
+  ]],
+  ["Fiscal", [
+    ["primario", "Resultado primario", "Economía"],
+    ["recaudacion", "Recaudación", "ARCA"],
+  ]],
+  ["Sector externo", [
+    ["saldo", "Saldo comercial", "INDEC"],
+  ]],
+];
+
+function armarMacro() {
+  $("macro").innerHTML = SECCIONES.map(([titulo, cards]) => `
+    <h2>${titulo}</h2>
+    <div class="grid">${cards.map(([id, t, src]) => `
+      <article class="card mcard" id="c-${id}">
+        <div class="mhead"><h3>${t}</h3><span class="src">${src}</span></div>
+        <div class="mval">—</div>
+        <div class="msub">Cargando…</div>
+        <div class="chart"></div>
+        <div class="mfoot"></div>
+      </article>`).join("")}
+    </div>`).join("");
+}
+
+function llenar(id, { val, sub, foot, pts, o, fuente }) {
+  const c = $("c-" + id);
+  if (val !== undefined) c.querySelector(".mval").innerHTML = val;
+  if (sub !== undefined) c.querySelector(".msub").innerHTML = sub;
+  if (foot !== undefined) c.querySelector(".mfoot").textContent = foot;
+  if (fuente) c.querySelector(".src").textContent = fuente;
+  if (pts) chart(c.querySelector(".chart"), pts, { label: c.querySelector("h3").textContent, ...o });
+}
+
+function fallo(id, e) {
+  const c = $("c-" + id);
+  c.querySelector(".msub").innerHTML = `<span class="err">No se pudo cargar: ${e.message || e}</span>`;
+}
+
+// Corre una carga; si falla, marca el error en sus tarjetas sin frenar al resto.
+const tarea = (ids, fn) => fn().catch(e => { console.error(ids, e); ids.forEach(id => fallo(id, e)); });
+
+/* ---------- Dólar: valores de referencia que usan varias tarjetas ---------- */
+
+const dolar = { mayorista: null, api: {} };   // api: casa -> {venta, fecha}
+
+function fxEnVivo() {
+  const a = state[FX.ars]?.LA?.price, d = state[FX.mep]?.LA?.price, c = state[FX.ccl]?.LA?.price;
+  pintarDolar("mep", a && d ? a / d : null, "bolsa");
+  pintarDolar("ccl", a && c ? a / c : null, "contadoconliqui");
+}
+
+// El valor en vivo (CGR) manda sobre el de dolarapi cuando está disponible.
+function pintarDolar(id, vivo, casa) {
+  if (!$("c-" + id)) return;
+  const api = dolar.api[casa];
+  const v = vivo ?? api?.venta;
+  if (v == null) return;
+  const brecha = dolar.mayorista ? v / dolar.mayorista - 1 : null;
+  llenar(id, {
+    val: num(v, 2) + (vivo ? `<span class="live" title="AL30 / AL30${id === "mep" ? "D" : "C"} en CGR">EN VIVO</span>` : ""),
+    sub: brecha != null ? `Brecha con el A3500: ${pct(brecha, 1)}` : "",
+    fuente: vivo ? "CGR · AL30" : "dolarapi",
+    foot: vivo ? "Último operado en CGR" : api ? `Actualizado ${new Date(api.fecha).toLocaleString("es-AR", { hour12: false })}` : "",
+  });
+}
+
+/* ---------- Carga de todo el tablero ---------- */
+
+let macroCargado = false;
+
+async function cargarMacro() {
+  $("macroEstado").textContent = "Actualizando…";
+  const d1 = haceDias(400), d2 = haceDias(730);
+
+  await Promise.allSettled([
+    // --- Dólar ---
+    tarea(["mayorista"], async () => {
+      const [tc, sup] = await Promise.all([bcra(5, d1), bcra(1188, d1)]);
+      const u = tc.at(-1), p = tc.at(-2), banda = sup.at(-1)?.v;
+      dolar.mayorista = u.v;
+      llenar("mayorista", {
+        val: num(u.v, 2),
+        sub: `${pct(u.v / p.v - 1, 2, true)} vs rueda anterior` + (banda ? ` · techo de banda ${num(banda, 0)} (${pct(banda / u.v - 1, 1)} arriba)` : ""),
+        foot: `Dato al ${fDia(u.f)} · línea punteada: techo de la banda`,
+        pts: tc, o: { fmt: (v) => num(v, 2), fmtAxis: (v) => num(v, 0), refs: [{ label: "Techo banda", pts: sup }] },
+      });
+    }),
+    tarea(["mep", "ccl", "blue"], async () => {
+      const [ahora, mep, ccl, blue] = await Promise.all([
+        getJSON("https://dolarapi.com/v1/dolares"), dolarHist("bolsa"), dolarHist("contadoconliqui"), dolarHist("blue"),
+      ]);
+      for (const d of ahora) dolar.api[d.casa] = { venta: d.venta, fecha: d.fechaActualizacion };
+      const o = { fmt: (v) => num(v, 2), fmtAxis: (v) => num(v, 0) };
+      llenar("mep", { pts: mep, o });
+      llenar("ccl", { pts: ccl, o });
+      llenar("blue", { pts: blue, o });
+      const b = dolar.api.blue;
+      llenar("blue", {
+        val: num(b?.venta, 2), sub: "Precio de venta",
+        foot: b ? `Actualizado ${new Date(b.fecha).toLocaleString("es-AR", { hour12: false })}` : "",
+      });
+    }),
+
+    // --- Reservas y riesgo ---
+    tarea(["reservas"], async () => {
+      const r = await bcra(1, d2);
+      const u = r.at(-1), p = r.at(-2), mes = r.find(x => x.f >= isoLocal(new Date(new Date(u.f) - 30 * 864e5))) || r[0];
+      llenar("reservas", {
+        val: `US$ ${num(u.v, 0)} M`,
+        sub: `${signo(u.v - p.v)}${num(u.v - p.v, 0)} M vs rueda anterior · ${signo(u.v - mes.v)}${num(u.v - mes.v, 0)} M en 30 días`,
+        foot: `Dato al ${fDia(u.f)} · el BCRA publica con ~2 ruedas de atraso`,
+        pts: r, o: { fmt: (v) => `US$ ${num(v, 0)} M`, fmtAxis: (v) => num(v / 1000, 0) + " mil" },
+      });
+    }),
+    tarea(["compras"], async () => {
+      const r = await bcra(78, "2024-01-01");
+      const porMes = new Map();
+      for (const p of r) { const k = p.f.slice(0, 7) + "-01"; porMes.set(k, (porMes.get(k) || 0) + p.v); }
+      const pts = [...porMes].map(([f, v]) => ({ f, v })).sort((a, b) => a.f < b.f ? -1 : 1).slice(-24);
+      const u = pts.at(-1), ult = r.at(-1);
+      const parcial = u.f.slice(0, 7) === hoy().slice(0, 7);
+      const ant = pts.at(-2);
+      llenar("compras", {
+        val: `US$ ${num(u.v, 0)} M`,
+        sub: `${MES_L[+u.f.slice(5, 7) - 1].replace(/^./, c => c.toUpperCase())}${parcial ? ", parcial" : ""}` + (ant ? ` · ${MES_L[+ant.f.slice(5, 7) - 1]}: US$ ${num(ant.v, 0)} M` : ""),
+        foot: `Último día informado: ${fDia(ult.f)} (${signo(ult.v)}${num(ult.v, 0)} M) · ~4 ruedas de atraso`,
+        pts, o: { type: "bar", signed: true, partialLast: parcial, fx: fMes, fmt: (v) => `US$ ${num(v, 0)} M`, fmtAxis: (v) => num(v, 0) },
+      });
+    }),
+    tarea(["riesgo"], async () => {
+      const { serie, fuente } = await riesgoPais();
+      const u = serie.at(-1), p = serie.at(-2);
+      llenar("riesgo", {
+        val: `${num(u.v, 0)} pb`, fuente,
+        sub: `${signo(u.v - p.v)}${num(u.v - p.v, 0)} pb vs rueda anterior`,
+        foot: `Dato al ${fDia(u.f)} · EMBI de JP Morgan`,
+        pts: serie, o: { fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) },
+      });
+    }),
+
+    // --- Tasas ---
+    ...[["tamar", 44], ["badlar", 7]].map(([id, serie]) => tarea([id], async () => {
+      const r = await bcra(serie, d1);
+      const u = r.at(-1), p = r.at(-2);
+      llenar(id, {
+        val: `${num(u.v, 2)}%`,
+        sub: `${signo(u.v - p.v)}${num(u.v - p.v, 2)} pp vs día anterior · TNA`,
+        foot: `Dato al ${fDia(u.f)}`,
+        pts: r, o: { fmt: (v) => `${num(v, 2)}%`, fmtAxis: (v) => num(v, 0) + "%" },
+      });
+    })),
+
+    // --- Precios (REM viene del BCRA) ---
+    tarea(["rem"], async () => {
+      const r = await bcra(29, "2024-01-01");
+      const u = r.at(-1), p = r.at(-2);
+      llenar("rem", {
+        val: `${num(u.v, 1)}%`,
+        sub: `Mediana del REM · mes anterior ${num(p.v, 1)}%`,
+        foot: `Relevamiento de ${fMes(u.f)}`,
+        pts: r, o: { fx: fMes, fmt: (v) => `${num(v, 1)}%`, fmtAxis: (v) => num(v, 0) + "%" },
+      });
+    }),
+
+    // --- INDEC y Economía, todo en un pedido a datos.gob.ar ---
+    tarea(["ipc", "nucleo", "emae", "ipi", "salarios", "primario", "recaudacion", "saldo"], async () => {
+      const s = await datosGob({
+        ipc: "148.3_INIVELNAL_DICI_M_26:percent_change",
+        ipc_ia: "148.3_INIVELNAL_DICI_M_26:percent_change_a_year_ago",
+        nucleo: "148.3_INUCLEONAL_DICI_M_19:percent_change",
+        emae: "143.3_NO_PR_2004_A_31:percent_change",
+        emae_ia: "143.3_NO_PR_2004_A_21:percent_change_a_year_ago",
+        ipi_ia: "453.1_SERIE_TENDCLO_0_0_21_61:percent_change_a_year_ago",
+        salarios: "149.1_TL_INDIIOS_OCTU_0_21:percent_change",
+        expo: "74.3_IET_0_M_16",
+        impo: "74.3_IIT_0_M_25",
+        primario: "452.3_RESULTADO_RIO_0_M_18_54",
+        recaud_ia: "172.3_TL_RECAION_M_0_0_17:percent_change_a_year_ago",
+      }, "2023-01-01");
+
+      const ultimos = (a, n = 24) => a.slice(-n);
+      const en = (a, f) => a.find(p => p.f === f)?.v;
+      const pctO = (d = 1, conSigno = false) => ({ fx: fMes, fmt: (v) => pct(v, d, conSigno), fmtAxis: (v) => pct(v, 0) });
+
+      // Inflación
+      const ipc = s.ipc.at(-1);
+      llenar("ipc", {
+        val: pct(ipc.v, 1), sub: `Interanual: ${pct(en(s.ipc_ia, ipc.f), 1)}`,
+        foot: `IPC nacional, nivel general · ${fMes(ipc.f)}`,
+        pts: ultimos(s.ipc), o: { type: "bar", ...pctO(1) },
+      });
+      const nuc = s.nucleo.at(-1);
+      llenar("nucleo", {
+        val: pct(nuc.v, 1), sub: `Nivel general: ${pct(en(s.ipc, nuc.f), 1)}`,
+        foot: `Sin estacionales ni regulados · ${fMes(nuc.f)}`,
+        pts: ultimos(s.nucleo), o: { type: "bar", ...pctO(1) },
+      });
+
+      // Actividad
+      const em = s.emae.at(-1);
+      llenar("emae", {
+        val: pct(em.v, 1, true), sub: `Interanual: ${pct(en(s.emae_ia, em.f), 1, true)}`,
+        foot: `Desestacionalizado, var. mensual · ${fMes(em.f)}`,
+        pts: ultimos(s.emae), o: { type: "bar", signed: true, ...pctO(1, true) },
+      });
+      const ip = s.ipi_ia.at(-1);
+      llenar("ipi", {
+        val: pct(ip.v, 1, true), sub: "Var. interanual",
+        foot: `IPI manufacturero, tendencia-ciclo · ${fMes(ip.f)}`,
+        pts: ultimos(s.ipi_ia), o: { type: "bar", signed: true, ...pctO(1, true) },
+      });
+
+      // Salario real = salario nominal deflactado por el IPC del mismo mes.
+      const real = s.salarios.filter(p => en(s.ipc, p.f) != null)
+        .map(p => ({ f: p.f, v: (1 + p.v) / (1 + en(s.ipc, p.f)) - 1, nom: p.v }));
+      const sr = real.at(-1);
+      llenar("salarios", {
+        val: pct(sr.v, 1, true), sub: `Nominal: ${pct(sr.nom, 1)} · IPC: ${pct(en(s.ipc, sr.f), 1)}`,
+        foot: `Índice de salarios deflactado por IPC, var. mensual · ${fMes(sr.f)}`,
+        pts: ultimos(real), o: { type: "bar", signed: true, ...pctO(1, true) },
+      });
+
+      // Fiscal (millones de pesos -> billones)
+      const prim = s.primario.map(p => ({ f: p.f, v: p.v / 1e6 }));
+      const pr = prim.at(-1);
+      const acum = prim.filter(p => p.f.slice(0, 4) === pr.f.slice(0, 4)).reduce((a, p) => a + p.v, 0);
+      const fB = (v) => `$ ${num(v, 2)} bill.`;
+      llenar("primario", {
+        val: fB(pr.v), sub: `Acumulado ${pr.f.slice(0, 4)}: ${fB(acum)}`,
+        foot: `Sector público nacional, base caja · ${fMes(pr.f)}`,
+        pts: ultimos(prim), o: { type: "bar", signed: true, fx: fMes, fmt: fB, fmtAxis: (v) => num(v, 1) },
+      });
+      const rc = s.recaud_ia.at(-1), ipcIa = en(s.ipc_ia, rc.f);
+      llenar("recaudacion", {
+        val: pct(rc.v, 1, true),
+        sub: `Var. interanual nominal` + (ipcIa != null ? ` · real: ${pct((1 + rc.v) / (1 + ipcIa) - 1, 1, true)}` : ""),
+        foot: `Recaudación total · ${fMes(rc.f)}`,
+        pts: ultimos(s.recaud_ia), o: { type: "bar", ...pctO(1, true) },
+      });
+
+      // Externo
+      const saldo = s.expo.filter(p => en(s.impo, p.f) != null)
+        .map(p => ({ f: p.f, v: p.v - en(s.impo, p.f), expo: p.v, impo: en(s.impo, p.f) }));
+      const sa = saldo.at(-1);
+      const fU = (v) => `US$ ${num(v, 0)} M`;
+      llenar("saldo", {
+        val: fU(sa.v), sub: `Expo ${fU(sa.expo)} · Impo ${fU(sa.impo)}`,
+        foot: `Intercambio comercial argentino · ${fMes(sa.f)}`,
+        pts: ultimos(saldo), o: { type: "bar", signed: true, fx: fMes, fmt: fU, fmtAxis: (v) => num(v, 0) },
+      });
+    }),
+
+    tarea(["desempleo"], async () => {
+      const s = await datosGob({ d: "45.2_ECTDT_0_T_33" }, "2019-01-01");
+      const u = s.d.at(-1), ant = s.d.find(p => p.f === `${+u.f.slice(0, 4) - 1}${u.f.slice(4)}`);
+      llenar("desempleo", {
+        val: pct(u.v, 1),
+        sub: ant ? `Hace un año: ${pct(ant.v, 1)}` : "",
+        foot: `Tasa de desocupación, total aglomerados · ${fTrim(u.f)}`,
+        pts: s.d, o: { fx: fTrim, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) },
+      });
+    }),
+  ]);
+
+  fxEnVivo();
+  const vivo = store.get("cgr_token") ? "MEP y CCL en vivo desde CGR." : "Entrá con tu token en Mercado para ver MEP y CCL en vivo.";
+  $("macroEstado").textContent = `Actualizado ${new Date().toLocaleTimeString("es-AR", { hour12: false })}. ${vivo}`;
+}
+
+$("macroRefresh").addEventListener("click", cargarMacro);
+
+// Refresco automático cada 10 minutos mientras se mira la pestaña Macro.
+setInterval(() => {
+  if (tab === "macro" && document.visibilityState === "visible") cargarMacro();
+}, 10 * 60 * 1000);
+
+/* ======================================================================= */
+/*  Pestañas y arranque                                                    */
+/* ======================================================================= */
+
+let tab = null;
+
+function setTab(t) {
+  tab = t;
+  document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("tab-mercado").hidden = t !== "mercado";
+  $("tab-macro").hidden = t !== "macro";
+  store.set("tab", t);
+  history.replaceState(null, "", "#" + t);
+  if (t === "macro") {
+    if (!macroCargado) { macroCargado = true; cargarMacro(); }
+    else redibujar();
+  }
+}
+
+document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+armarMacro();
 if (store.get("cgr_token")) showApp(); else showLogin();
+const inicial = location.hash.slice(1);
+setTab(["mercado", "macro"].includes(inicial) ? inicial : store.get("tab") || "mercado");
 </script>
 </body>
 </html>
