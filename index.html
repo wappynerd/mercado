@@ -1214,17 +1214,29 @@ const ultimo = (t) => filasDe(t).filter(r => esNum(r.ROE)).at(-1);
 const dataDe = (clave) => B.data.find(r => r.clave === clave);
 const valDe = (t) => B.val.find(r => r.ticker === t);
 
-// Precio: en vivo desde CGR si hay token; si no, el último cargado en la planilla.
+// Precios públicos de BYMA (data912): sin token, se actualizan cada ~30 segundos.
+const PX = {};   // ticker -> {p, var1}
+async function preciosPublicos() {
+  const d = await getJSON("https://data912.com/live/arg_stocks");
+  for (const x of d) {
+    const p = x.c > 0 ? x.c : x.px_bid > 0 ? x.px_bid : null;
+    if (p) PX[x.symbol] = { p, var1: esNum(x.pct_change) ? x.pct_change / 100 : null };
+  }
+}
+
+// Precio actual, en orden de preferencia: CGR en vivo (con token), data912, y como
+// último recurso el precio cargado en la planilla (que es el del cierre del trimestre).
 function precioBanco(t) {
   const md = state[`${t} - 24hs`];
   const p = md?.LA?.price;
-  if (p) return { p, vivo: true, var1: md.CL?.price ? p / md.CL.price - 1 : null };
+  if (p) return { p, vivo: true, fuente: "cgr", var1: md.CL?.price ? p / md.CL.price - 1 : null };
+  if (PX[t]) return { ...PX[t], vivo: true, fuente: "data912" };
   const u = ultimo(t), d = u && dataDe(u.clave);
-  return d && esNum(d.precio_local) ? { p: d.precio_local, vivo: false, trimestre: u.trimestre } : null;
+  return d && esNum(d.precio_local) ? { p: d.precio_local, vivo: false, fuente: "planilla", trimestre: u.trimestre } : null;
 }
 
-// P/BV de hoy: precio / valor libro por acción. El libro del último balance está en la
-// moneda de su fila (moneda_reexpr); se lleva a pesos de hoy con el último IPC mensual.
+// P/BV de hoy: precio actual / valor libro por acción. El libro del último balance está en
+// la moneda de su fila (moneda_reexpr); se lleva a pesos de hoy con el último IPC mensual.
 function pbvHoy(t) {
   const u = ultimo(t), pr = precioBanco(t);
   if (!u || !pr) return null;
@@ -1253,7 +1265,9 @@ function pintarTarjetasBancos() {
     if (!u) return "";
     const precio = pr ? `<span class="big">${num(pr.p, 2)}</span>` : `<span class="big">—</span>`;
     const chg = pr?.vivo && pr.var1 != null ? pill(pr.var1, pct(Math.abs(pr.var1), 2), 1) : "";
-    const etiqueta = pr?.vivo ? `<span class="live">EN VIVO</span>` : `<span class="live late" title="Sin token: precio cargado en la planilla">PLANILLA ${pr?.trimestre || ""}</span>`;
+    const etiqueta = pr?.fuente === "cgr" ? `<span class="live" title="Último operado en CGR">EN VIVO</span>`
+      : pr?.fuente === "data912" ? `<span class="live" title="Precio de BYMA vía data912, se actualiza cada minuto. Con el token de CGR va en vivo.">ACTUAL · 1 MIN</span>`
+      : `<span class="live late" title="No se pudo leer ningún precio actual: se usa el cargado en la planilla">PLANILLA ${pr?.trimestre || ""}</span>`;
     return `<article class="card bcard" style="--c:${colorBanco(t)}">
       <div class="row2"><span class="tk">${t}</span><span class="src">Balance ${u.trimestre}</span></div>
       <div class="row2" style="margin-top:12px">${precio}${chg}</div>
@@ -1301,7 +1315,7 @@ function pintarValuacion() {
     const vivo = filas.some(([, v]) => v.vivo);
     $("valNota").innerHTML = `P/BV justificado = (ROE sostenible − g) / (Ke − g), con g = ${pct(v0.g, 1)} y Ke bueno ${pct(v0.ke.bueno, 2)} · base ${pct(v0.ke.base, 2)} · malo ${pct(v0.ke.malo, 2)} (hoja INPUTS). `
       + `El ROE que descuenta el precio es la misma fórmula al revés: P/BV × (Ke − g) + g. `
-      + (vivo ? `P/BV de hoy: precio en vivo de CGR sobre el patrimonio del último balance, reexpresado a IPC de ${fMesL(B.ipcUlt.f)}.`
+      + (vivo ? `P/BV de hoy: precio actual (CGR en vivo o, sin token, data912) sobre el patrimonio del último balance, reexpresado a IPC de ${fMesL(B.ipcUlt.f)}.`
               : `Sin token de CGR se usa el P/BV al cierre del último trimestre de la planilla.`);
   }
 }
@@ -1502,6 +1516,7 @@ async function cargarBancos() {
       const s = await datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, haceDias(240));
       B.ipcUlt = s.n.at(-1);
     } catch { B.ipcUlt = null; }
+    try { await preciosPublicos(); } catch (e) { console.error("data912", e); }
 
     // Si la planilla suma o saca bancos, el feed se reengancha con la lista nueva.
     const syms = B.bancos.map(t => `${t} - 24hs`);
@@ -1514,7 +1529,8 @@ async function cargarBancos() {
     $("bancosError").hidden = true;
     $("bancosBody").hidden = false;
     pintarBancos();
-    const vivo = store.get("cgr_token") ? "Precios en vivo desde CGR." : "Sin token: precios y P/BV de la planilla. Entrá con tu token en Mercado para el P/BV en vivo.";
+    const vivo = store.get("cgr_token") ? "Precios en vivo desde CGR."
+      : "Precios de BYMA vía data912, cada minuto. Con tu token de CGR (pestaña Mercado) van en vivo.";
     $("bancosEstado").textContent = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos. ${vivo}`;
   } catch (e) {
     console.error(e);
@@ -1530,6 +1546,13 @@ async function cargarBancos() {
 }
 
 $("bancosRefresh").addEventListener("click", cargarBancos);
+
+// Sin feed de CGR, los precios de los bancos se refrescan cada minuto desde data912.
+setInterval(async () => {
+  if (!B.cargado || document.visibilityState !== "visible") return;
+  if (B.bancos.every(t => state[`${t} - 24hs`]?.LA?.price)) return;   // ya van en vivo por CGR
+  try { await preciosPublicos(); bancosEnVivo(); } catch (e) { console.error("data912", e); }
+}, 60 * 1000);
 setInterval(() => {
   if (tab === "bancos" && document.visibilityState === "visible") cargarBancos();
 }, 10 * 60 * 1000);
