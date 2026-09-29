@@ -180,7 +180,14 @@
   .sens td { text-align: center; }
   .sens td.hot { outline: 2px solid var(--text); outline-offset: -2px; font-weight: 700; }
   .legend { display: flex; gap: 18px; flex-wrap: wrap; font: 600 13px var(--display); margin: -4px 0 12px; }
+  .grid-feat { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .chart.tall { height: 220px; }
   .chart .ml { fill: none; stroke-width: 2; stroke-linejoin: round; }
+  .chart .ml.prom { stroke: var(--muted) !important; stroke-dasharray: 5 4; stroke-width: 1.5; }
+  .pctl { display: inline-flex; align-items: center; gap: 8px; }
+  .pctl .bar { width: 80px; height: 6px; border-radius: 3px; background: var(--grid); position: relative; overflow: hidden; }
+  .pctl .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; }
+  .swatch.prom { background: none; border-top: 2px dashed var(--muted); border-radius: 0; height: 0; width: 14px; vertical-align: 3px; }
   .chart .md { stroke: var(--panel); stroke-width: 2; }
 
   footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 16px; }
@@ -286,19 +293,26 @@
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
 
-      <div class="sec"><span class="n">01</span><h2>Último trimestre</h2></div>
+      <div class="sec"><span class="n">01</span><h2>Tablero</h2></div>
+      <div class="legend" id="bankLegend"></div>
+      <div class="grid grid-feat" id="bankFeat"></div>
+
+      <div class="sec"><span class="n">02</span><h2>El sistema: promedio de los bancos</h2></div>
+      <div class="card table-wrap"><table class="btable" id="promTable"></table></div>
+      <p class="hint">Promedio simple de los bancos con dato en cada trimestre (hoja DASH). Percentil: dónde queda el último promedio dentro de su propia historia; 100 es el máximo de la serie.</p>
+
+      <div class="sec"><span class="n">03</span><h2>Resto de las métricas</h2></div>
+      <div class="grid" id="bankCharts"></div>
+
+      <div class="sec"><span class="n">04</span><h2>Último trimestre, banco por banco</h2></div>
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
       <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
 
-      <div class="sec"><span class="n">02</span><h2>Evolución trimestral</h2></div>
-      <div class="legend" id="bankLegend"></div>
-      <div class="grid" id="bankCharts"></div>
-
-      <div class="sec"><span class="n">03</span><h2>Valuación</h2></div>
+      <div class="sec"><span class="n">05</span><h2>Valuación</h2></div>
       <div class="card table-wrap"><table class="btable" id="valTable"></table></div>
       <p class="hint" id="valNota"></p>
 
-      <div class="sec"><span class="n">04</span><h2>Sensibilidad del P/BV justificado</h2></div>
+      <div class="sec"><span class="n">06</span><h2>Sensibilidad del P/BV justificado</h2></div>
       <div class="card table-wrap"><table class="btable sens" id="sensTable"></table></div>
       <p class="hint" id="sensNota"></p>
     </div>
@@ -1150,7 +1164,7 @@ async function hoja(nombre, rango) {
   return j.table.rows.map(row => Object.fromEntries(cols.map((c, i) => [c, row.c?.[i]?.v ?? null])));
 }
 
-const B = { calc: [], data: [], val: [], ipc: {}, ipcUlt: null, bancos: [], cargado: false };
+const B = { calc: [], data: [], val: [], ipc: {}, ipcUlt: null, bancos: [], dash: { xs: [], m: {} }, cargado: false };
 const colorBanco = (t) => `var(--b${(B.bancos.indexOf(t) % 4) + 1})`;
 const fx2 = (v) => v == null ? "—" : num(v, 2) + "x";
 const esNum = (v) => typeof v === "number" && !isNaN(v);
@@ -1164,10 +1178,36 @@ const METRICAS = [
   ["eficiencia", "Eficiencia (gastos / ingresos)", -1, P1], ["prest_real_t/t", "Préstamos reales t/t", 1, P1s],
   ["titulos_%act", "Títulos públicos / activos", 0, P1], ["P/BV", "P/BV al cierre del trimestre", 0, fx2], ["P/TBV", "P/TBV al cierre", 0, fx2],
 ];
-const EVOLUCION = [
-  ["ROE", "ROE", P1], ["ROE_aj", "ROE ajustado", P1], ["NIM", "Margen financiero (NIM)", P1], ["CoR", "Costo de riesgo", P1],
-  ["NPL", "Cartera irregular (NPL)", P1], ["cobertura", "Cobertura", P1], ["eficiencia", "Eficiencia", P1], ["P/BV", "P/BV al cierre", fx2],
-];
+// Bloques de la hoja DASH: [nombre en la columna A, título, dirección (+1 más es mejor, -1 menos es mejor, 0 neutro)].
+// Los tres primeros son los gráficos de tu DASH y van destacados en el Tablero.
+const DASH_DESTACADOS = [["ROE", "ROE", 1], ["P/BV", "P/BV", 0], ["NPL", "Mora (NPL)", -1]];
+const DASH_DIR = { "ROE": 1, "P/BV": 0, "ROE ajustado": 1, "NIM": 1, "Costo de riesgo": -1, "NPL": -1, "Cobertura": 1, "Eficiencia": -1 };
+const fmtDash = (m) => m === "P/BV" ? fx2 : P1;
+const ejeDash = (m) => m === "P/BV" ? (v) => num(v, 1) + "x" : (v) => pct(v, 0);
+
+// La hoja DASH viene en bloques: una fila con el nombre de la métrica en la columna A,
+// después una fila por banco y una de Promedio (con su percentil en la columna P).
+function parsearDash(filas) {
+  const xs = Object.keys(filas[0] || {}).filter(k => /^\d{4}Q[1-4]$/.test(k)).sort();
+  const m = {};
+  let actual = null;
+  for (const r of filas) {
+    if (r.Metrica) actual = String(r.Metrica).trim();
+    const b = r.Banco ? String(r.Banco).trim() : null;
+    if (!actual || !b || b === "Banco") continue;
+    const bloque = m[actual] ??= { bancos: {}, prom: null, pctl: null, actual: {} };
+    const vals = xs.map(x => esNum(r[x]) ? r[x] : null);
+    if (b === "Promedio") { bloque.prom = vals; bloque.pctl = esNum(r.Percentil) ? r.Percentil : null; }
+    else { bloque.bancos[b] = vals; if (esNum(r.Actual)) bloque.actual[b] = r.Actual; }
+  }
+  // Solo los trimestres que tienen algún dato cargado.
+  const usados = xs.map((_, i) => Object.values(m).some(bl => Object.values(bl.bancos).some(v => v[i] != null)));
+  for (const bl of Object.values(m)) {
+    for (const k in bl.bancos) bl.bancos[k] = bl.bancos[k].filter((_, i) => usados[i]);
+    if (bl.prom) bl.prom = bl.prom.filter((_, i) => usados[i]);
+  }
+  return { xs: xs.filter((_, i) => usados[i]), m };
+}
 
 const filasDe = (t) => B.calc.filter(r => r.ticker === t).sort((a, b) => a.trimestre < b.trimestre ? -1 : 1);
 const ultimo = (t) => filasDe(t).filter(r => esNum(r.ROE)).at(-1);
@@ -1224,6 +1264,7 @@ function pintarTarjetasBancos() {
         <dt>Potencial</dt><dd>${va?.potencial != null ? pill(va.potencial, pct(Math.abs(va.potencial), 0), 1) : "—"}</dd>
         <dt>ROE que descuenta el precio</dt><dd>${va ? pct(va.impl.base, 1) : "—"}</dd>
         <dt>ROE último trimestre</dt><dd>${pct(u.ROE, 1)}</dd>
+        <dt>ROE / (P/BV)</dt><dd>${va ? pct(u.ROE / va.pbv, 1) : "—"}</dd>
         <dt>NPL · cobertura</dt><dd>${pct(u.NPL, 1)} · ${pct(u.cobertura, 0)}</dd>
       </dl>
     </article>`;
@@ -1245,11 +1286,12 @@ function pintarTablaBancos() {
 function pintarValuacion() {
   const filas = B.bancos.map(t => [t, valuacion(t)]).filter(([, v]) => v);
   const v0 = filas[0]?.[1];
-  let h = `<thead><tr class="grp"><th></th><th colspan="2">Hoy</th><th colspan="3">P/BV justificado</th><th colspan="3">ROE que descuenta el precio</th><th></th></tr>
-    <tr><th>Banco</th><th>P/BV</th><th>ROE sost.</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Potencial</th></tr></thead><tbody>`;
+  let h = `<thead><tr class="grp"><th></th><th colspan="3">Hoy</th><th colspan="3">P/BV justificado</th><th colspan="3">ROE que descuenta el precio</th><th></th></tr>
+    <tr><th>Banco</th><th>P/BV</th><th>ROE / (P/BV)</th><th>ROE sost.</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Potencial</th></tr></thead><tbody>`;
   for (const [t, v] of filas) {
+    const roeUlt = ultimo(t)?.ROE;
     h += `<tr><td class="sym"><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</td>
-      <td>${fx2(v.pbv)}</td><td>${pct(v.roeSost, 1)}</td>
+      <td>${fx2(v.pbv)}</td><td>${esNum(roeUlt) ? pct(roeUlt / v.pbv, 1) : "—"}</td><td>${pct(v.roeSost, 1)}</td>
       <td>${fx2(v.just.bueno)}</td><td>${fx2(v.just.base)}</td><td>${fx2(v.just.malo)}</td>
       <td>${pct(v.impl.bueno, 1)}</td><td>${pct(v.impl.base, 1)}</td><td>${pct(v.impl.malo, 1)}</td>
       <td>${v.potencial != null ? pill(v.potencial, pct(Math.abs(v.potencial), 0), 1) : "—"}</td></tr>`;
@@ -1287,27 +1329,93 @@ function pintarSensibilidad() {
     + (prom != null ? ` Hoy el mercado paga en promedio <b class="num">${fx2(prom)}</b> el libro.` : "");
 }
 
-function pintarEvolucion() {
-  const xs = [...new Set(B.calc.filter(r => B.bancos.some(t => t === r.ticker) && esNum(r.ROE)).map(r => r.trimestre))].sort();
-  $("bankLegend").innerHTML = B.bancos.map(t => `<span><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</span>`).join("");
-  $("bankCharts").innerHTML = EVOLUCION.map(([k, nombre]) => `
-    <article class="card mcard"><div class="mhead"><h3>${nombre}</h3><span class="src">CALC</span></div>
-    <div class="chart" data-k="${k}"></div></article>`).join("");
-  for (const [k, nombre, f] of EVOLUCION) {
-    const series = B.bancos.map(t => {
-      const m = new Map(filasDe(t).map(r => [r.trimestre, esNum(r[k]) ? r[k] : null]));
-      return { name: t, color: colorBanco(t), vals: xs.map(x => m.get(x) ?? null) };
-    });
-    chart($("bankCharts").querySelector(`[data-k="${CSS.escape(k)}"]`), [], { label: nombre, multi: { xs, series }, fmt: f, fmtAxis: k === "P/BV" ? (v) => num(v, 1) + "x" : (v) => pct(v, 0) });
+// Series de un bloque de DASH: una línea por banco más el promedio punteado.
+// En P/BV se agrega un último punto "Hoy" con el P/BV en vivo (o la columna Actual de DASH sin token).
+function seriesDash(metrica) {
+  const bl = B.dash.m[metrica];
+  let xs = [...B.dash.xs];
+  const bancos = B.bancos.filter(t => bl.bancos[t]);
+  const series = bancos.map(t => ({ name: t, color: colorBanco(t), vals: [...bl.bancos[t]] }));
+  let prom = bl.prom ? [...bl.prom] : null;
+  if (metrica === "P/BV") {
+    const hoy = bancos.map(t => { const h = pbvHoy(t); return h?.vivo ? h.pbv : bl.actual[t] ?? null; });
+    if (hoy.some(esNum)) {
+      const vivo = bancos.some(t => pbvHoy(t)?.vivo);
+      xs.push(vivo ? "Hoy" : "Actual");
+      series.forEach((s, i) => s.vals.push(hoy[i]));
+      const v = hoy.filter(esNum);
+      if (prom) prom.push(v.reduce((a, b) => a + b, 0) / v.length);
+    }
   }
+  if (prom) series.push({ name: "Promedio", color: "var(--muted)", vals: prom, prom: true });
+  return { xs, series };
+}
+
+function tarjetaDash(metrica, titulo, alto) {
+  return `<article class="card mcard"><div class="mhead"><h3>${titulo}</h3><span class="src">DASH</span></div>
+    <div class="chart${alto ? " tall" : ""}" data-m="${metrica}"></div></article>`;
+}
+
+function dibujarDash(cont, metrica, alto) {
+  const el = cont.querySelector(`[data-m="${CSS.escape(metrica)}"]`);
+  if (el) chart(el, [], { label: metrica, multi: seriesDash(metrica), h: alto ? 220 : 140, fmt: fmtDash(metrica), fmtAxis: ejeDash(metrica) });
+}
+
+function pintarTablero() {
+  $("bankLegend").innerHTML = B.bancos.map(t => `<span><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</span>`).join("")
+    + `<span><span class="swatch prom"></span>Promedio</span>`;
+  const dest = DASH_DESTACADOS.filter(([m]) => B.dash.m[m]);
+  $("bankFeat").innerHTML = dest.map(([m, t]) => tarjetaDash(m, t, true)).join("");
+  dest.forEach(([m]) => dibujarDash($("bankFeat"), m, true));
+}
+
+function pintarResto() {
+  const resto = Object.keys(B.dash.m).filter(m => !DASH_DESTACADOS.some(([d]) => d === m));
+  $("bankCharts").innerHTML = resto.map(m => tarjetaDash(m, m, false)).join("");
+  resto.forEach(m => dibujarDash($("bankCharts"), m, false));
+}
+
+function pintarPromedios() {
+  const xs = B.dash.xs;
+  let h = `<thead><tr><th>Métrica</th><th>Último</th><th>Trimestre anterior</th><th>Cambio</th><th>Percentil histórico</th><th>Mejor banco</th></tr></thead><tbody>`;
+  // PERCENTRANK de Sheets: proporción de la serie que queda por debajo del valor.
+  const percentrank = (arr, x) => arr.length > 1 ? arr.filter(v => v < x).length / (arr.length - 1) : null;
+  for (const [m, bl0] of Object.entries(B.dash.m)) {
+    if (!bl0.prom) continue;
+    // P/BV: la última columna es la de hoy (precio en vivo), igual que "Actual" en tu DASH.
+    let bl = bl0, xsM = xs;
+    if (m === "P/BV") {
+      const sd = seriesDash(m), prom = sd.series.find(s => s.prom);
+      if (prom && /^(Hoy|Actual)$/.test(sd.xs.at(-1))) {
+        const serie = prom.vals.filter(esNum);
+        bl = { ...bl0, prom: prom.vals, pctl: percentrank(serie, prom.vals.at(-1)),
+               bancos: Object.fromEntries(sd.series.filter(s => !s.prom).map(s => [s.name, s.vals])) };
+        xsM = sd.xs;
+      }
+    }
+    const idx = bl.prom.map((v, i) => v != null ? i : -1).filter(i => i >= 0);
+    const i = idx.at(-1), j = idx.at(-2);
+    if (i == null) continue;
+    const f = fmtDash(m), dir = DASH_DIR[m] ?? 0, u = bl.prom[i], a = j != null ? bl.prom[j] : null;
+    const cambio = a == null ? "—" : m === "P/BV"
+      ? pill(u - a, num(Math.abs(u - a), 2) + "x", dir)
+      : pill(u - a, num(Math.abs(u - a) * 100, 1) + " pp", dir);
+    const cand = Object.entries(bl.bancos).filter(([, v]) => v[i] != null);
+    const mejor = dir && cand.length ? cand.reduce((a, b) => (b[1][i] - a[1][i]) * dir > 0 ? b : a) : null;
+    const pc = bl.pctl != null ? `<span class="pctl"><span class="bar"><i style="width:${Math.round(bl.pctl * 100)}%"></i></span>${num(bl.pctl * 100, 0)}</span>` : "—";
+    h += `<tr><td>${m}<br><span class="src">${xsM[i]}</span></td><td>${f(u)}</td><td>${a != null ? f(a) : "—"}</td><td>${cambio}</td><td>${pc}</td>`
+      + `<td>${mejor ? `<span class="swatch" style="--c:${colorBanco(mejor[0])}"></span>${mejor[0]} <span class="muted">${f(mejor[1][i])}</span>` : "—"}</td></tr>`;
+  }
+  $("promTable").innerHTML = h + "</tbody>";
 }
 
 // Gráfico de varias líneas (una por banco) con tooltip que lista todos los valores del trimestre.
 function drawMulti(el, o) {
   const { xs, series } = o.multi;
   if (!xs.length || !el.clientWidth) return;
-  const W = el.clientWidth, H = 140, L = 44, R = 6, T = 8, B_ = 20;
+  const W = el.clientWidth, H = o.h || 140, L = 44, R = 6, T = 8, B_ = 20;
   const pw = W - L - R, ph = H - T - B_, n = xs.length;
+  const esHoy = /^(Hoy|Actual)$/.test(xs.at(-1));
   const vals = series.flatMap(s => s.vals).filter(v => v != null);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   if (lo === hi) { lo -= 1; hi += 1; }
@@ -1315,7 +1423,7 @@ function drawMulti(el, o) {
   lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks.at(-1));
   const y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
   const x = (i) => L + (n === 1 ? pw / 2 : i * pw / (n - 1));
-  const fq = (q) => `${q.slice(5)} ${q.slice(2, 4)}`;
+  const fq = (q) => /^\d{4}Q/.test(q) ? `${q.slice(5)} ${q.slice(2, 4)}` : q;
 
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label}">`;
   for (const t of ticks) {
@@ -1325,9 +1433,12 @@ function drawMulti(el, o) {
   for (const se of series) {
     let d = "", pen = false;
     se.vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
-    s += `<path class="ml" style="stroke:${se.color}" d="${d}"/>`;
-    // Un punto donde la serie empieza sola (un trimestre suelto no dibuja línea).
-    se.vals.forEach((v, i) => { if (v != null && se.vals[i - 1] == null && se.vals[i + 1] == null) s += `<circle class="md" r="3.5" cx="${x(i)}" cy="${y(v)}" style="fill:${se.color}"/>`; });
+    s += `<path class="ml${se.prom ? " prom" : ""}" style="stroke:${se.color}" d="${d}"/>`;
+    // Punto en los trimestres sueltos (no dibujan línea) y en el valor de hoy.
+    se.vals.forEach((v, i) => {
+      const suelto = v != null && se.vals[i - 1] == null && se.vals[i + 1] == null;
+      if ((suelto || (esHoy && i === n - 1 && v != null)) && !se.prom) s += `<circle class="md" r="4" cx="${x(i)}" cy="${y(v)}" style="fill:${se.color}"/>`;
+    });
   }
   s += `<text class="ax" x="${L}" y="${H - 5}">${fq(xs[0])}</text><text class="ax" x="${W - R}" y="${H - 5}" text-anchor="end">${fq(xs.at(-1))}</text>`;
   s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
@@ -1339,7 +1450,7 @@ function drawMulti(el, o) {
     const i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (pw / Math.max(1, n - 1)))));
     xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
     const filas = series.map(se => [se, se.vals[i]]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
-    tip.innerHTML = `<span class="muted">${xs[i]}</span>` + filas.map(([se, v]) => `<br><span class="swatch" style="--c:${se.color}"></span>${se.name} <b>${o.fmt(v)}</b>`).join("");
+    tip.innerHTML = `<span class="muted">${xs[i]}</span>` + filas.map(([se, v]) => `<br><span class="swatch${se.prom ? " prom" : ""}" style="--c:${se.color}"></span>${se.name} <b>${o.fmt(v)}</b>`).join("");
     tip.hidden = false;
     const tw = tip.offsetWidth;
     tip.style.left = Math.max(0, Math.min(W - tw, x(i) - tw / 2)) + "px";
@@ -1349,8 +1460,10 @@ function drawMulti(el, o) {
 
 function pintarBancos() {
   pintarTarjetasBancos();
+  pintarTablero();
+  pintarPromedios();
+  pintarResto();
   pintarTablaBancos();
-  pintarEvolucion();
   pintarValuacion();
   pintarSensibilidad();
 }
@@ -1363,6 +1476,8 @@ function bancosEnVivo() {
   requestAnimationFrame(() => {
     bancosPendiente = false;
     pintarTarjetasBancos();
+    if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
+    pintarPromedios();
     pintarValuacion();
     pintarSensibilidad();
   });
@@ -1371,9 +1486,12 @@ function bancosEnVivo() {
 async function cargarBancos() {
   $("bancosEstado").textContent = "Leyendo la planilla…";
   try {
-    const [calc, data, val, ipc] = await Promise.all([
-      hoja("CALC", "A5:AC200"), hoja("DATA", "A5:AJ200"), hoja("VALUACION", "A5:G30"), hoja("INPUTS", "A29:B80"),
+    // VALUACION se lee solo hasta la fila 12: debajo está la tabla de sensibilidad, con
+    // números en la columna A, y Google tipa la columna entera como numérica y pierde los tickers.
+    const [calc, data, val, ipc, dash] = await Promise.all([
+      hoja("CALC", "A5:AC200"), hoja("DATA", "A5:AJ200"), hoja("VALUACION", "A5:G12"), hoja("INPUTS", "A29:B80"), hoja("DASH", "A4:P200"),
     ]);
+    B.dash = parsearDash(dash);
     const esFila = (r) => r.ticker && /^\d{4}Q[1-4]$/.test(r.trimestre || "");
     B.calc = calc.filter(esFila);
     B.data = data.filter(esFila);
