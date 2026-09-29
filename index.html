@@ -178,15 +178,10 @@
   .btable td.na { color: var(--muted); }
   .btable tr.grp th { text-align: center; border-bottom: 0; padding-bottom: 0; color: var(--sun); }
   .legend { display: flex; gap: 18px; flex-wrap: wrap; font: 600 13px var(--display); margin: -4px 0 12px; }
-  .grid-feat { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-  .ep-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .epv { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
-  .epv .bar { width: 64px; height: 6px; border-radius: 3px; background: var(--grid); position: relative; overflow: hidden; }
-  .epv .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; }
-  .epv.main { font-weight: 700; }
-  .btable th.main { color: var(--text); }
+  .grid-feat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 760px) { .grid-feat { grid-template-columns: minmax(0, 1fr); } }
   .est { color: var(--sun); font-weight: 600; }
-  .chart.tall { height: 220px; }
+  .chart.tall { height: 240px; }
   .chart .ml { fill: none; stroke-width: 2; stroke-linejoin: round; }
   .chart .ml.prom { stroke: var(--muted) !important; stroke-dasharray: 5 4; stroke-width: 1.5; }
   .pctl { display: inline-flex; align-items: center; gap: 8px; }
@@ -298,29 +293,19 @@
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
 
-      <div class="sec"><span class="n">01</span><h2>ROE / (P/BV): lo que rinde el precio</h2></div>
-      <div class="ep-wrap">
-        <div class="card table-wrap"><table class="btable" id="epTable"></table></div>
-        <article class="card mcard">
-          <div class="mhead"><h3>Historia: ROE del trimestre / P/BV</h3><span class="src">DASH</span></div>
-          <div class="legend" id="epLegend" style="margin:8px 0 0"></div>
-          <div class="chart tall" id="epChart"></div>
-        </article>
-      </div>
-      <p class="hint" id="epNota"></p>
-
-      <div class="sec"><span class="n">02</span><h2>Tablero</h2></div>
+      <div class="sec"><span class="n">01</span><h2>Tablero</h2></div>
       <div class="legend" id="bankLegend"></div>
       <div class="grid grid-feat" id="bankFeat"></div>
+      <p class="hint" id="epNota"></p>
 
-      <div class="sec"><span class="n">03</span><h2>El sistema: promedio de los bancos</h2></div>
+      <div class="sec"><span class="n">02</span><h2>El sistema: promedio de los bancos</h2></div>
       <div class="card table-wrap"><table class="btable" id="promTable"></table></div>
       <p class="hint">Promedio simple de los bancos con dato en cada trimestre (hoja DASH). Percentil: dónde queda el último promedio dentro de su propia historia; 100 es el máximo de la serie.</p>
 
-      <div class="sec"><span class="n">04</span><h2>Resto de las métricas</h2></div>
+      <div class="sec"><span class="n">03</span><h2>Resto de las métricas</h2></div>
       <div class="grid" id="bankCharts"></div>
 
-      <div class="sec"><span class="n">05</span><h2>Último trimestre, banco por banco</h2></div>
+      <div class="sec"><span class="n">04</span><h2>Último trimestre, banco por banco</h2></div>
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
       <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
 
@@ -1320,15 +1305,15 @@ function tarjetaDash(metrica, titulo, alto) {
 
 function dibujarDash(cont, metrica, alto) {
   const el = cont.querySelector(`[data-m="${CSS.escape(metrica)}"]`);
-  if (el) chart(el, [], { label: metrica, multi: seriesDash(metrica), h: alto ? 220 : 140, fmt: fmtDash(metrica), fmtAxis: ejeDash(metrica) });
+  if (el) chart(el, [], { label: metrica, multi: seriesDash(metrica), h: alto ? 240 : 140, fmt: fmtDash(metrica), fmtAxis: ejeDash(metrica) });
 }
 
 function pintarTablero() {
   $("bankLegend").innerHTML = B.bancos.map(t => `<span><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</span>`).join("")
     + `<span><span class="swatch prom"></span>Promedio</span>`;
   const dest = DASH_DESTACADOS.filter(([m]) => B.dash.m[m]);
-  $("epLegend").innerHTML = $("bankLegend").innerHTML;
-  $("bankFeat").innerHTML = dest.map(([m, t]) => tarjetaDash(m, t, true)).join("");
+  $("bankFeat").innerHTML = `<article class="card mcard"><div class="mhead"><h3>ROE / (P/BV)</h3><span class="src">DASH · hoy</span></div>
+    <div class="chart tall" id="epChart"></div></article>` + dest.map(([m, t]) => tarjetaDash(m, t, true)).join("");
   dest.forEach(([m]) => dibujarDash($("bankFeat"), m, true));
 }
 
@@ -1433,62 +1418,29 @@ function textoIPC() {
   return `${base} <span class="est">+ ${B.ipcHoy.faltan === 1 ? "un mes estimado" : `${B.ipcHoy.faltan} meses estimados`} con el REM (${pct(B.ipcHoy.pim, 1)} mensual)</span>, que se reemplaza solo cuando INDEC publica`;
 }
 
-// ROE / (P/BV) de hoy con tres ROE distintos. Como el ROE es real y el P/BV compara precio y
-// libro en la misma moneda (libro llevado a hoy por IPC), el cociente es el rendimiento real
-// de las ganancias sobre el precio: la inversa del P/E.
-function rendimientos(t) {
-  const h = pbvHoy(t), fs = filasDe(t).filter(r => esNum(r.ROE)), u = fs.at(-1);
-  if (!h || !esNum(h.pbv) || !u) return null;
-  const ult4 = fs.slice(-4);
-  const roes = {
-    trim: u.ROE,
-    aj: esNum(u.ROE_aj) ? u.ROE_aj : null,
-    t4: ult4.length === 4 ? ult4.reduce((a, r) => a + r.ROE, 0) / 4 : null,   // promedio de los 4 trimestres anualizados
-  };
-  const ep = Object.fromEntries(Object.entries(roes).map(([k, r]) => [k, r != null ? r / h.pbv : null]));
-  return { pbv: h.pbv, vivo: h.vivo, roes, ep, desde: ult4[0]?.trimestre, hasta: u.trimestre };
-}
-
+// ROE del trimestre / P/BV al cierre (de DASH), con el punto de hoy: ROE del último
+// trimestre sobre el P/BV con precio actual. Es el rendimiento real de las ganancias sobre el precio.
 function pintarEP() {
-  const filas = B.bancos.map(t => [t, rendimientos(t)]).filter(([, r]) => r)
-    .sort((a, b) => (b[1].ep.t4 ?? -9) - (a[1].ep.t4 ?? -9));
-  if (!filas.length) return;
-  const max = Math.max(...filas.flatMap(([, r]) => Object.values(r.ep)).filter(esNum), 0.01);
-  const celda = (v, roe, main) => v == null ? `<td class="na">—</td>`
-    : `<td title="ROE ${pct(roe, 1)}"><span class="epv${main ? " main" : ""}"><span class="bar"><i style="width:${Math.max(0, v) / max * 100}%"></i></span>${pct(v, 1)}</span></td>`;
-  let h = `<thead><tr class="grp"><th></th><th></th><th colspan="3">ROE / (P/BV) según qué ROE</th></tr>
-    <tr><th>Banco</th><th>P/BV hoy</th><th>Último trim.</th><th>Ajustado</th><th class="main">Últimos 4 trim.</th></tr></thead><tbody>`;
-  for (const [t, r] of filas) {
-    h += `<tr><td class="sym"><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</td><td>${fx2(r.pbv)}</td>`
-      + celda(r.ep.trim, r.roes.trim) + celda(r.ep.aj, r.roes.aj) + celda(r.ep.t4, r.roes.t4, true) + `</tr>`;
-  }
-  $("epTable").innerHTML = h + "</tbody>";
-
-  // Historia: ROE del trimestre / P/BV al cierre, de DASH, más el punto de hoy.
-  const roe = B.dash.m["ROE"], pb = seriesDash("P/BV");
-  if (roe) {
-    const xs = pb.xs;
-    const series = B.bancos.filter(t => roe.bancos[t]).map(t => {
-      const pbv = pb.series.find(s => s.name === t)?.vals || [];
-      const roes = [...roe.bancos[t]];
-      if (xs.length > B.dash.xs.length) roes.push(roes.filter(esNum).at(-1) ?? null);   // hoy: ROE del último trimestre
-      return { name: t, color: colorBanco(t), vals: xs.map((_, i) => esNum(roes[i]) && esNum(pbv[i]) && pbv[i] > 0 ? roes[i] / pbv[i] : null) };
-    });
-    const prom = xs.map((_, i) => { const v = series.map(s => s.vals[i]).filter(esNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
-    series.push({ name: "Promedio", color: "var(--muted)", vals: prom, prom: true });
-    chart($("epChart"), [], { label: "ROE / (P/BV)", multi: { xs, series }, h: 220, fmt: P1, fmtAxis: (v) => pct(v, 0) });
-  }
-
-  const r0 = filas[0][1];
-  $("epNota").innerHTML = `Es el rendimiento real de las ganancias sobre el precio (la inversa del P/E): cuánto gana el banco por cada peso que pagás por la acción. `
-    + `Ordenado por <b>últimos 4 trimestres</b> (${r0.desde}–${r0.hasta}, promedio de los ROE anualizados): es el más estable, porque un solo trimestre puede venir movido por cargos únicos. `
-    + `P/BV con precio actual y libro ${textoIPC()}.`;
+  const roe = B.dash.m["ROE"], el = $("epChart");
+  if (!roe || !el) return;
+  const pb = seriesDash("P/BV"), xs = pb.xs;
+  const series = B.bancos.filter(t => roe.bancos[t]).map(t => {
+    const pbv = pb.series.find(s => s.name === t)?.vals || [];
+    const roes = [...roe.bancos[t]];
+    if (xs.length > B.dash.xs.length) roes.push(roes.filter(esNum).at(-1) ?? null);   // hoy: ROE del último trimestre
+    return { name: t, color: colorBanco(t), vals: xs.map((_, i) => esNum(roes[i]) && esNum(pbv[i]) && pbv[i] > 0 ? roes[i] / pbv[i] : null) };
+  });
+  const prom = xs.map((_, i) => { const v = series.map(s => s.vals[i]).filter(esNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+  series.push({ name: "Promedio", color: "var(--muted)", vals: prom, prom: true });
+  chart(el, [], { label: "ROE / (P/BV)", multi: { xs, series }, h: 240, fmt: P1, fmtAxis: (v) => pct(v, 0) });
+  $("epNota").innerHTML = `ROE / (P/BV): lo que gana el banco por cada peso que pagás por la acción (la inversa del P/E). `
+    + `El último punto usa el ROE del último trimestre y el P/BV con precio actual, con el libro ${textoIPC()}.`;
 }
 
 function pintarBancos() {
   pintarTarjetasBancos();
-  pintarEP();
   pintarTablero();
+  pintarEP();
   pintarPromedios();
   pintarResto();
   pintarTablaBancos();
