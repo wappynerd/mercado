@@ -134,6 +134,7 @@
   .msub { font-size: 13px; color: var(--muted); min-height: 19px; }
   .mfoot { font-size: 11px; color: var(--muted); margin-top: 6px; }
   .live { font: 700 10px/1 var(--mono); letter-spacing: .06em; color: var(--up); border: 1px solid var(--up); border-radius: 5px; padding: 3px 5px; }
+  .live.late { color: var(--sun); border-color: var(--sun); }
   .chart { position: relative; height: 140px; margin-top: 10px; touch-action: pan-y; }
   .chart svg { display: block; }
   .chart .gl { stroke: var(--grid); stroke-width: 1; }
@@ -285,8 +286,9 @@ const cero = (v, txt) => /[1-9]/.test(txt) ? v : 0;
 // Píldora de variación. `txt` va sin signo: la flecha ya lo dice.
 const pill = (v, txt, pol) => { v = cero(v, txt); return `<span class="pill ${tono(v, pol)}">${flecha(v)} ${txt}</span>`; };
 
+// no-store: sin esto el navegador puede reusar una respuesta vieja y el dato queda congelado.
 async function getJSON(url) {
-  const r = await fetch(url);
+  const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -745,10 +747,12 @@ function pintarDolar(id, vivo, casa) {
   llenar(id, {
     val: num(v, 2),
     chg: var1 != null ? { v: var1, txt: pct(Math.abs(var1), 2), pol: 0 } : null,
-    sub: (vivo ? `<span class="live" title="AL30 / AL30${id === "mep" ? "D" : "C"} en CGR">EN VIVO</span> ` : "")
+    sub: (vivo ? `<span class="live" title="AL30 / AL30${id === "mep" ? "D" : "C"} en CGR">EN VIVO</span> `
+      : id === "blue" ? ""
+      : `<span class="live late" title="Dato de dolarapi, no del mercado en vivo. Entrá con tu token en Mercado para verlo en vivo.">DEMORADO</span> `)
       + (brecha != null ? `Brecha con el A3500: <b class="num">${pct(brecha, 1)}</b>` : ""),
     fuente: vivo ? "CGR · AL30" : "dolarapi",
-    foot: vivo ? "Último operado en CGR" : api ? `Actualizado ${new Date(api.fecha).toLocaleString("es-AR", { hour12: false })}` : "",
+    foot: vivo ? "Último operado en CGR" : api ? `Último dato de dolarapi: ${new Date(api.fecha).toLocaleString("es-AR", { hour12: false, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "",
   });
   cinta(id, num(v, 2), var1 != null ? cintaChg(var1, pct(Math.abs(var1), 2), 0) : "");
 }
