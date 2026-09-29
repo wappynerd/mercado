@@ -854,19 +854,7 @@ async function cargarMacro() {
         pts, o: { type: "bar", signed: true, partialLast: parcial, fx: fMes, fmt: (v) => `US$ ${num(v, 0)} M`, fmtAxis: (v) => num(v, 0) },
       });
     }),
-    tarea(["riesgo"], async () => {
-      const { serie, fuente } = await riesgoPais();
-      M.riesgo = serie;
-      const u = serie.at(-1), p = serie.at(-2), d = u.v - p.v;
-      llenar("riesgo", {
-        val: `${num(u.v, 0)} pb`, fuente,
-        chg: { v: d, txt: `${num(Math.abs(d), 0)} pb`, pol: -1 },
-        sub: "EMBI de JP Morgan",
-        foot: `Dato al ${fDia(u.f)}`,
-        pts: serie, o: { fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) },
-      });
-      cinta("riesgo", num(u.v, 0), cintaChg(d, num(Math.abs(d), 0), -1));
-    }),
+    tarea(["riesgo"], cargarRiesgo),
 
     // --- Tasas ---
     ...[["tamar", 44], ["badlar", 7]].map(([id, serie]) => tarea([id], async () => {
@@ -1006,13 +994,55 @@ async function cargarMacro() {
 
   fxEnVivo();
   titulares();
-  const vivo = store.get("cgr_token") ? "MEP y CCL en vivo desde CGR." : "Entrá con tu token en Mercado para ver MEP y CCL en vivo.";
-  $("macroEstado").textContent = `Actualizado a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}. Se refresca solo cada 10 minutos. ${vivo}`;
+  ultimaCompleta = ultimaRapida = new Date();
+  estadoMacro();
+}
+
+// Riesgo país: ámbito lo mueve durante la rueda, por eso entra en el refresco rápido.
+async function cargarRiesgo() {
+  const { serie, fuente } = await riesgoPais();
+  M.riesgo = serie;
+  const u = serie.at(-1), p = serie.at(-2), d = u.v - p.v;
+  llenar("riesgo", {
+    val: `${num(u.v, 0)} pb`, fuente,
+    chg: { v: d, txt: `${num(Math.abs(d), 0)} pb`, pol: -1 },
+    sub: "EMBI de JP Morgan · se actualiza cada minuto",
+    foot: `Dato al ${fDia(u.f)}`,
+    pts: serie, o: { fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) },
+  });
+  cinta("riesgo", num(u.v, 0), cintaChg(d, num(Math.abs(d), 0), -1));
+}
+
+// Refresco rápido: lo que cambia durante el día sin estar en el feed de CGR.
+async function refrescoRapido() {
+  await Promise.allSettled([
+    tarea(["blue"], async () => {
+      for (const d of await getJSON("https://dolarapi.com/v1/dolares")) dolar.api[d.casa] = { venta: d.venta, fecha: d.fechaActualizacion };
+      pintarDolar("blue", null, "blue");
+      fxEnVivo();   // MEP y CCL: si no hay feed de CGR, toman el nuevo valor de dolarapi
+    }),
+    tarea(["riesgo"], cargarRiesgo),
+  ]);
+  titulares();
+  estadoMacro();
+}
+
+let ultimaCompleta = null, ultimaRapida = null;
+function estadoMacro() {
+  const h = (d) => d ? d.toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
+  const vivo = store.get("cgr_token")
+    ? "<b>En vivo:</b> MEP y CCL desde CGR, con cada operación."
+    : "<b>MEP y CCL en vivo:</b> entrá con tu token en la pestaña Mercado.";
+  $("macroEstado").innerHTML = `${vivo} <b>Cada minuto:</b> blue y riesgo país (${h(ultimaRapida)}). `
+    + `<b>Cada 10 minutos:</b> el resto (${h(ultimaCompleta)}), que se publica una vez por día o por mes.`;
 }
 
 $("macroRefresh").addEventListener("click", cargarMacro);
 
-// Refresco automático cada 10 minutos (también alimenta la cinta).
+// Dos ritmos: rápido para lo que se mueve en el día, lento para lo diario y mensual.
+setInterval(() => {
+  if (document.visibilityState === "visible") refrescoRapido().then(() => { ultimaRapida = new Date(); estadoMacro(); });
+}, 60 * 1000);
 setInterval(() => {
   if (document.visibilityState === "visible") cargarMacro();
 }, 10 * 60 * 1000);
