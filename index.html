@@ -79,7 +79,6 @@
   .err { color: var(--down); font-size: 12px; }
 
   .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 10px; }
-  .sec .n { font: 600 10px var(--mono); color: #000; background: var(--accent); padding: 2px 5px; }
   .sec h2 { font: 600 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; margin: 0; }
   .sec::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 
@@ -260,12 +259,12 @@
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
 
-      <div class="sec"><span class="n">01</span><h2>Tablero</h2></div>
+      <div class="sec"><h2>Tablero</h2></div>
       <div class="legend" id="bankLegend"></div>
       <div class="grid grid-feat" id="bankFeat"></div>
       <p class="hint" id="epNota"></p>
 
-      <div class="sec"><span class="n">02</span><h2>Último trimestre, banco por banco</h2></div>
+      <div class="sec"><h2>Último trimestre, banco por banco</h2></div>
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
       <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
 
@@ -744,8 +743,8 @@ const SECCIONES = [
 ];
 
 function armarMacro() {
-  $("macroGrid").innerHTML = SECCIONES.map(([titulo, cards], i) => `
-    <div class="sec"><span class="n">${String(i + 1).padStart(2, "0")}</span><h2>${titulo}</h2></div>
+  $("macroGrid").innerHTML = SECCIONES.map(([titulo, cards]) => `
+    <div class="sec"><h2>${titulo}</h2></div>
     <div class="grid">${cards.map(([id, t, src]) => `
       <article class="card mcard" id="c-${id}">
         <div class="mhead"><h3>${t}</h3><span class="src">${src}</span></div>
