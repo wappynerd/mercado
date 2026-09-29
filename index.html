@@ -164,14 +164,17 @@
   .bank-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
   .bcard { border-top: 4px solid var(--c); }
   .bcard .tk { font: 800 22px/1 var(--display); font-stretch: 115%; }
-  .bcard .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 4px; }
-  .bcard dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; margin: 12px 0 0; font-size: 13px; }
-  .bcard dt { color: var(--muted); }
-  .bcard dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .bcard .big { font: 600 30px/1 var(--mono); letter-spacing: -.02em; }
+  .bcard .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .bcard .precio { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .bcard .big { font: 600 26px/1 var(--mono); letter-spacing: -.02em; }
+  .bcard .hero { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .bcard .hero .v { font: 600 40px/1 var(--mono); letter-spacing: -.03em; }
+  .bcard .k { display: block; font: 600 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .bcard .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .bcard .stats .v { font: 500 17px/1 var(--mono); font-variant-numeric: tabular-nums; }
   .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 6px; vertical-align: 0; }
-  .btable th { text-align: right; }
-  .btable th:first-child { text-align: left; }
+  .btable th, .btable td { text-align: center; }
+  .btable th:first-child, .btable td:first-child { text-align: left; width: 34%; }
   .btable td { font-size: 14px; }
   .btable td.best { font-weight: 700; }
   .btable td:first-child { font-family: var(--display); }
@@ -359,7 +362,7 @@ async function getJSON(url) {
 }
 
 /* ======================================================================= */
-/*  Reloj y estado de la rueda (BYMA opera de 11 a 17, días hábiles)        */
+/*  Reloj y estado de la rueda (BYMA opera de 10:30 a 17, días hábiles)     */
 /* ======================================================================= */
 
 function reloj() {
@@ -369,8 +372,9 @@ function reloj() {
   $("reloj").textContent = `${p.hour}:${p.minute}`;
   const min = +p.hour * 60 + +p.minute;
   const habil = !/^(sáb|dom)/i.test(p.weekday);
-  const abierta = habil && min >= 11 * 60 && min < 17 * 60;
-  $("rueda").textContent = abierta ? "Rueda abierta" : habil && min < 11 * 60 ? "Abre a las 11" : "Rueda cerrada";
+  const apertura = 10 * 60 + 30, cierre = 17 * 60;
+  const abierta = habil && min >= apertura && min < cierre;
+  $("rueda").textContent = abierta ? "Rueda abierta" : habil && min < apertura ? "Abre a las 10:30" : "Rueda cerrada";
   $("ruedaDot").className = "dot " + (abierta ? "sun" : "");
 }
 reloj();
@@ -1240,17 +1244,17 @@ function pintarTarjetasBancos() {
     const etiqueta = pr?.fuente === "cgr" ? `<span class="live" title="Último operado en CGR">EN VIVO</span>`
       : pr?.fuente === "data912" ? `<span class="live" title="Precio de BYMA vía data912, se actualiza cada minuto. Con el token de CGR va en vivo.">ACTUAL · 1 MIN</span>`
       : `<span class="live late" title="No se pudo leer ningún precio actual: se usa el cargado en la planilla">PLANILLA ${pr?.trimestre || ""}</span>`;
+    const ep = esNum(h?.pbv) ? u.ROE / h.pbv : null;
     return `<article class="card bcard" style="--c:${colorBanco(t)}">
       <div class="row2"><span class="tk">${t}</span><span class="src">Balance ${u.trimestre}</span></div>
-      <div class="row2" style="margin-top:12px">${precio}${chg}</div>
-      <div style="margin-top:6px">${etiqueta}</div>
-      <dl>
-        <dt>P/BV ${h?.vivo ? "hoy" : "al cierre"}</dt><dd>${fx2(h?.pbv)}</dd>
-        <dt>ROE último trimestre</dt><dd>${pct(u.ROE, 1)}</dd>
-        <dt>ROE / (P/BV)</dt><dd><b>${esNum(h?.pbv) ? pct(u.ROE / h.pbv, 1) : "—"}</b></dd>
-        <dt>NPL</dt><dd>${pct(u.NPL, 1)}</dd>
-        <dt>Cobertura</dt><dd>${pct(u.cobertura, 0)}</dd>
-      </dl>
+      <div class="precio">${precio}${chg}${etiqueta}</div>
+      <div class="hero"><span class="k">ROE / (P/BV)</span><span class="v">${pct(ep, 1)}</span></div>
+      <div class="stats">
+        <div><span class="k">P/BV ${h?.vivo ? "hoy" : "al cierre"}</span><span class="v">${fx2(h?.pbv)}</span></div>
+        <div><span class="k">ROE ${u.trimestre}</span><span class="v">${pct(u.ROE, 1)}</span></div>
+        <div><span class="k">NPL</span><span class="v">${pct(u.NPL, 1)}</span></div>
+        <div><span class="k">Cobertura</span><span class="v">${pct(u.cobertura, 0)}</span></div>
+      </div>
     </article>`;
   }).join("");
 }
