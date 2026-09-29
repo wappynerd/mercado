@@ -177,8 +177,6 @@
   .btable td:first-child { font-family: var(--display); }
   .btable td.na { color: var(--muted); }
   .btable tr.grp th { text-align: center; border-bottom: 0; padding-bottom: 0; color: var(--sun); }
-  .sens td { text-align: center; }
-  .sens td.hot { outline: 2px solid var(--text); outline-offset: -2px; font-weight: 700; }
   .legend { display: flex; gap: 18px; flex-wrap: wrap; font: 600 13px var(--display); margin: -4px 0 12px; }
   .grid-feat { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
   .ep-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
@@ -326,13 +324,6 @@
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
       <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
 
-      <div class="sec"><span class="n">06</span><h2>Valuación</h2></div>
-      <div class="card table-wrap"><table class="btable" id="valTable"></table></div>
-      <p class="hint" id="valNota"></p>
-
-      <div class="sec"><span class="n">07</span><h2>Sensibilidad del P/BV justificado</h2></div>
-      <div class="card table-wrap"><table class="btable sens" id="sensTable"></table></div>
-      <p class="hint" id="sensNota"></p>
     </div>
   </div>
 </main>
@@ -1182,7 +1173,7 @@ async function hoja(nombre, rango) {
   return j.table.rows.map(row => Object.fromEntries(cols.map((c, i) => [c, row.c?.[i]?.v ?? null])));
 }
 
-const B = { calc: [], data: [], val: [], ipc: {}, ipcUlt: null, ipcHoy: null, bancos: [], dash: { xs: [], m: {} }, cargado: false };
+const B = { calc: [], data: [], ipc: {}, ipcUlt: null, ipcHoy: null, bancos: [], dash: { xs: [], m: {} }, cargado: false };
 const colorBanco = (t) => `var(--b${(B.bancos.indexOf(t) % 4) + 1})`;
 const fx2 = (v) => v == null ? "—" : num(v, 2) + "x";
 const esNum = (v) => typeof v === "number" && !isNaN(v);
@@ -1230,7 +1221,6 @@ function parsearDash(filas) {
 const filasDe = (t) => B.calc.filter(r => r.ticker === t).sort((a, b) => a.trimestre < b.trimestre ? -1 : 1);
 const ultimo = (t) => filasDe(t).filter(r => esNum(r.ROE)).at(-1);
 const dataDe = (clave) => B.data.find(r => r.clave === clave);
-const valDe = (t) => B.val.find(r => r.ticker === t);
 
 // Precios públicos de BYMA (data912): sin token, se actualizan cada ~30 segundos.
 const PX = {};   // ticker -> {p, var1}
@@ -1265,21 +1255,9 @@ function pbvHoy(t) {
   return { pbv: pr.p / (u.book_x_accion * aj), ptbv: pr.p / (u.tbook_x_accion * aj), vivo: true, aj };
 }
 
-const pbvJust = (roe, g, ke) => ke > g ? (roe - g) / (ke - g) : null;
-const roeImpl = (pbv, g, ke) => pbv * (ke - g) + g;
-
-function valuacion(t) {
-  const v = valDe(t), h = pbvHoy(t);
-  if (!v || !h || !esNum(h.pbv)) return null;
-  const ke = { bueno: v["Ke bueno"], base: v["Ke base"], malo: v["Ke malo"] };
-  const just = Object.fromEntries(Object.entries(ke).map(([k, x]) => [k, pbvJust(v.ROE_sost, v.g, x)]));
-  const impl = Object.fromEntries(Object.entries(ke).map(([k, x]) => [k, roeImpl(h.pbv, v.g, x)]));
-  return { ...h, roeSost: v.ROE_sost, g: v.g, ke, just, impl, potencial: just.base != null ? just.base / h.pbv - 1 : null };
-}
-
 function pintarTarjetasBancos() {
   $("bankCards").innerHTML = B.bancos.map(t => {
-    const u = ultimo(t), pr = precioBanco(t), va = valuacion(t);
+    const u = ultimo(t), pr = precioBanco(t), h = pbvHoy(t);
     if (!u) return "";
     const precio = pr ? `<span class="big">${num(pr.p, 2)}</span>` : `<span class="big">—</span>`;
     const chg = pr?.vivo && pr.var1 != null ? pill(pr.var1, pct(Math.abs(pr.var1), 2), 1) : "";
@@ -1291,13 +1269,11 @@ function pintarTarjetasBancos() {
       <div class="row2" style="margin-top:12px">${precio}${chg}</div>
       <div style="margin-top:6px">${etiqueta}</div>
       <dl>
-        <dt>P/BV ${va?.vivo ? "hoy" : "al cierre"}</dt><dd>${fx2(va?.pbv)}</dd>
-        <dt>P/BV justificado (Ke base)</dt><dd>${fx2(va?.just.base)}</dd>
-        <dt>Potencial</dt><dd>${va?.potencial != null ? pill(va.potencial, pct(Math.abs(va.potencial), 0), 1) : "—"}</dd>
-        <dt>ROE que descuenta el precio</dt><dd>${va ? pct(va.impl.base, 1) : "—"}</dd>
+        <dt>P/BV ${h?.vivo ? "hoy" : "al cierre"}</dt><dd>${fx2(h?.pbv)}</dd>
         <dt>ROE último trimestre</dt><dd>${pct(u.ROE, 1)}</dd>
-        <dt>ROE / (P/BV)</dt><dd>${va ? pct(u.ROE / va.pbv, 1) : "—"}</dd>
-        <dt>NPL · cobertura</dt><dd>${pct(u.NPL, 1)} · ${pct(u.cobertura, 0)}</dd>
+        <dt>ROE / (P/BV)</dt><dd><b>${esNum(h?.pbv) ? pct(u.ROE / h.pbv, 1) : "—"}</b></dd>
+        <dt>NPL</dt><dd>${pct(u.NPL, 1)}</dd>
+        <dt>Cobertura</dt><dd>${pct(u.cobertura, 0)}</dd>
       </dl>
     </article>`;
   }).join("");
@@ -1313,52 +1289,6 @@ function pintarTablaBancos() {
     h += `<tr><td>${nombre}</td>${vals.map(v => v == null ? `<td class="na">—</td>` : `<td class="${v === mejor ? "best" : ""}">${f(v)}</td>`).join("")}</tr>`;
   }
   $("bankTable").innerHTML = h + "</tbody>";
-}
-
-function pintarValuacion() {
-  const filas = B.bancos.map(t => [t, valuacion(t)]).filter(([, v]) => v);
-  const v0 = filas[0]?.[1];
-  let h = `<thead><tr class="grp"><th></th><th colspan="3">Hoy</th><th colspan="3">P/BV justificado</th><th colspan="3">ROE que descuenta el precio</th><th></th></tr>
-    <tr><th>Banco</th><th>P/BV</th><th>ROE / (P/BV)</th><th>ROE sost.</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Potencial</th></tr></thead><tbody>`;
-  for (const [t, v] of filas) {
-    const roeUlt = ultimo(t)?.ROE;
-    h += `<tr><td class="sym"><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</td>
-      <td>${fx2(v.pbv)}</td><td>${esNum(roeUlt) ? pct(roeUlt / v.pbv, 1) : "—"}</td><td>${pct(v.roeSost, 1)}</td>
-      <td>${fx2(v.just.bueno)}</td><td>${fx2(v.just.base)}</td><td>${fx2(v.just.malo)}</td>
-      <td>${pct(v.impl.bueno, 1)}</td><td>${pct(v.impl.base, 1)}</td><td>${pct(v.impl.malo, 1)}</td>
-      <td>${v.potencial != null ? pill(v.potencial, pct(Math.abs(v.potencial), 0), 1) : "—"}</td></tr>`;
-  }
-  $("valTable").innerHTML = h + "</tbody>";
-  if (v0) {
-    const vivo = filas.some(([, v]) => v.vivo);
-    $("valNota").innerHTML = `P/BV justificado = (ROE sostenible − g) / (Ke − g), con g = ${pct(v0.g, 1)} y Ke bueno ${pct(v0.ke.bueno, 2)} · base ${pct(v0.ke.base, 2)} · malo ${pct(v0.ke.malo, 2)} (hoja INPUTS). `
-      + `El ROE que descuenta el precio es la misma fórmula al revés: P/BV × (Ke − g) + g. `
-      + (vivo ? `P/BV de hoy: precio actual (CGR en vivo o, sin token, data912) sobre el patrimonio del último balance, ${textoIPC()}.`
-              : `Sin token de CGR se usa el P/BV al cierre del último trimestre de la planilla.`);
-  }
-}
-
-function pintarSensibilidad() {
-  const v0 = valDe(B.bancos[0]);
-  if (!v0) return;
-  const g = v0.g, roes = [.06, .08, .10, .12, .14, .16, .18, .20, .22], kes = [.13, .14, .15, .16, .17, .18, .19, .20];
-  const cerca = (arr, x) => arr.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a);
-  const rS = cerca(roes, v0.ROE_sost), kS = cerca(kes, v0["Ke base"]);
-  const todos = roes.flatMap(r => kes.map(k => pbvJust(r, g, k))).filter(v => v != null);
-  const max = Math.max(...todos);
-  let h = `<thead><tr><th>ROE \\ Ke</th>${kes.map(k => `<th>${pct(k, 0)}</th>`).join("")}</tr></thead><tbody>`;
-  for (const r of roes) {
-    h += `<tr><td class="sym">${pct(r, 0)}</td>${kes.map(k => {
-      const v = pbvJust(r, g, k);
-      const a = v == null ? 0 : Math.round(Math.max(0, v) / max * 55);
-      return `<td class="${r === rS && k === kS ? "hot" : ""}" style="background:color-mix(in srgb, var(--accent) ${a}%, transparent)">${fx2(v)}</td>`;
-    }).join("")}</tr>`;
-  }
-  $("sensTable").innerHTML = h + "</tbody>";
-  const pbvs = B.bancos.map(t => pbvHoy(t)?.pbv).filter(esNum);
-  const prom = pbvs.length ? pbvs.reduce((a, b) => a + b, 0) / pbvs.length : null;
-  $("sensNota").innerHTML = `Recuadro: tu supuesto base (ROE ${pct(v0.ROE_sost, 0)}, Ke ${pct(v0["Ke base"], 2)}). g = ${pct(g, 1)}.`
-    + (prom != null ? ` Hoy el mercado paga en promedio <b class="num">${fx2(prom)}</b> el libro.` : "");
 }
 
 // Series de un bloque de DASH: una línea por banco más el promedio punteado.
@@ -1523,17 +1453,14 @@ function pintarEP() {
   const filas = B.bancos.map(t => [t, rendimientos(t)]).filter(([, r]) => r)
     .sort((a, b) => (b[1].ep.t4 ?? -9) - (a[1].ep.t4 ?? -9));
   if (!filas.length) return;
-  const ke = valDe(B.bancos[0])?.["Ke base"];
   const max = Math.max(...filas.flatMap(([, r]) => Object.values(r.ep)).filter(esNum), 0.01);
   const celda = (v, roe, main) => v == null ? `<td class="na">—</td>`
     : `<td title="ROE ${pct(roe, 1)}"><span class="epv${main ? " main" : ""}"><span class="bar"><i style="width:${Math.max(0, v) / max * 100}%"></i></span>${pct(v, 1)}</span></td>`;
-  let h = `<thead><tr class="grp"><th></th><th></th><th colspan="3">ROE / (P/BV) según qué ROE</th><th></th></tr>
-    <tr><th>Banco</th><th>P/BV hoy</th><th>Último trim.</th><th>Ajustado</th><th class="main">Últimos 4 trim.</th><th>vs Ke base${ke ? ` (${pct(ke, 1)})` : ""}</th></tr></thead><tbody>`;
+  let h = `<thead><tr class="grp"><th></th><th></th><th colspan="3">ROE / (P/BV) según qué ROE</th></tr>
+    <tr><th>Banco</th><th>P/BV hoy</th><th>Último trim.</th><th>Ajustado</th><th class="main">Últimos 4 trim.</th></tr></thead><tbody>`;
   for (const [t, r] of filas) {
-    const dif = ke != null && r.ep.t4 != null ? r.ep.t4 - ke : null;
     h += `<tr><td class="sym"><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</td><td>${fx2(r.pbv)}</td>`
-      + celda(r.ep.trim, r.roes.trim) + celda(r.ep.aj, r.roes.aj) + celda(r.ep.t4, r.roes.t4, true)
-      + `<td>${dif != null ? pill(dif, num(Math.abs(dif) * 100, 1) + " pp", 1) : "—"}</td></tr>`;
+      + celda(r.ep.trim, r.roes.trim) + celda(r.ep.aj, r.roes.aj) + celda(r.ep.t4, r.roes.t4, true) + `</tr>`;
   }
   $("epTable").innerHTML = h + "</tbody>";
 
@@ -1549,15 +1476,13 @@ function pintarEP() {
     });
     const prom = xs.map((_, i) => { const v = series.map(s => s.vals[i]).filter(esNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
     series.push({ name: "Promedio", color: "var(--muted)", vals: prom, prom: true });
-    chart($("epChart"), [], { label: "ROE / (P/BV)", multi: { xs, series }, h: 220, fmt: P1, fmtAxis: (v) => pct(v, 0),
-      refLine: ke != null ? { v: ke, label: "Ke base" } : null });
+    chart($("epChart"), [], { label: "ROE / (P/BV)", multi: { xs, series }, h: 220, fmt: P1, fmtAxis: (v) => pct(v, 0) });
   }
 
   const r0 = filas[0][1];
   $("epNota").innerHTML = `Es el rendimiento real de las ganancias sobre el precio (la inversa del P/E): cuánto gana el banco por cada peso que pagás por la acción. `
     + `Ordenado por <b>últimos 4 trimestres</b> (${r0.desde}–${r0.hasta}, promedio de los ROE anualizados): es el más estable, porque un solo trimestre puede venir movido por cargos únicos. `
-    + `Si supera tu Ke, el precio paga más que el costo de capital. P/BV con precio actual y libro ${textoIPC()}. `
-    + `En el gráfico, línea dorada: Ke base.`;
+    + `P/BV con precio actual y libro ${textoIPC()}.`;
 }
 
 function pintarBancos() {
@@ -1567,8 +1492,6 @@ function pintarBancos() {
   pintarPromedios();
   pintarResto();
   pintarTablaBancos();
-  pintarValuacion();
-  pintarSensibilidad();
 }
 
 // Cada tick de CGR repinta solo lo que depende del precio, como mucho una vez por cuadro.
@@ -1582,24 +1505,19 @@ function bancosEnVivo() {
     pintarEP();
     if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
     pintarPromedios();
-    pintarValuacion();
-    pintarSensibilidad();
   });
 }
 
 async function cargarBancos() {
   $("bancosEstado").textContent = "Leyendo la planilla…";
   try {
-    // VALUACION se lee solo hasta la fila 12: debajo está la tabla de sensibilidad, con
-    // números en la columna A, y Google tipa la columna entera como numérica y pierde los tickers.
-    const [calc, data, val, ipc, dash] = await Promise.all([
-      hoja("CALC", "A5:AC200"), hoja("DATA", "A5:AJ200"), hoja("VALUACION", "A5:G12"), hoja("INPUTS", "A29:B80"), hoja("DASH", "A4:P200"),
+    const [calc, data, ipc, dash] = await Promise.all([
+      hoja("CALC", "A5:AC200"), hoja("DATA", "A5:AJ200"), hoja("INPUTS", "A29:B80"), hoja("DASH", "A4:P200"),
     ]);
     B.dash = parsearDash(dash);
     const esFila = (r) => r.ticker && /^\d{4}Q[1-4]$/.test(r.trimestre || "");
     B.calc = calc.filter(esFila);
     B.data = data.filter(esFila);
-    B.val = val.filter(r => r.ticker && esNum(r.ROE_sost));
     B.ipc = Object.fromEntries(ipc.filter(r => r.trimestre && esNum(r.indice_IPC)).map(r => [r.trimestre, r.indice_IPC]));
     B.bancos = [...new Set(B.calc.map(r => r.ticker))].filter(t => ultimo(t));
     // IPC a hoy: el último publicado por INDEC y, para los meses que todavía no salieron,
