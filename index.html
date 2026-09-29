@@ -152,6 +152,37 @@
   .tip .muted { color: inherit; opacity: .65; }
   .err { color: var(--down); font-size: 13px; }
 
+  /* ---------- Bancos ---------- */
+  :root { --b1: #2a78d6; --b2: #eb6834; --b3: #1baf7a; --b4: #eda100; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --b1: #3987e5; --b2: #d95926; --b3: #199e70; --b4: #c98500; } }
+  :root[data-theme="dark"] { --b1: #3987e5; --b2: #d95926; --b3: #199e70; --b4: #c98500; }
+  a.btn { display: inline-block; font: 600 14px var(--display); padding: 10px 16px; border-radius: 9px; border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+  a.btn:hover { border-color: var(--text); }
+  .err-card { border-color: var(--down); margin-top: 14px; }
+  .err-card h3 { margin: 0 0 6px; font: 700 16px var(--display); color: var(--down); }
+  .err-card p { margin: 4px 0; }
+  .bank-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+  .bcard { border-top: 4px solid var(--c); }
+  .bcard .tk { font: 800 22px/1 var(--display); font-stretch: 115%; }
+  .bcard .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 4px; }
+  .bcard dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; margin: 12px 0 0; font-size: 13px; }
+  .bcard dt { color: var(--muted); }
+  .bcard dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .bcard .big { font: 600 30px/1 var(--mono); letter-spacing: -.02em; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 6px; vertical-align: 0; }
+  .btable th { text-align: right; }
+  .btable th:first-child { text-align: left; }
+  .btable td { font-size: 14px; }
+  .btable td.best { font-weight: 700; }
+  .btable td:first-child { font-family: var(--display); }
+  .btable td.na { color: var(--muted); }
+  .btable tr.grp th { text-align: center; border-bottom: 0; padding-bottom: 0; color: var(--sun); }
+  .sens td { text-align: center; }
+  .sens td.hot { outline: 2px solid var(--text); outline-offset: -2px; font-weight: 700; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font: 600 13px var(--display); margin: -4px 0 12px; }
+  .chart .ml { fill: none; stroke-width: 2; stroke-linejoin: round; }
+  .chart .md { stroke: var(--panel); stroke-width: 2; }
+
   footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 16px; }
 </style>
 </head>
@@ -179,6 +210,7 @@
     <nav class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="mercado">Mercado</button>
       <button type="button" role="tab" data-tab="macro">Macro</button>
+      <button type="button" role="tab" data-tab="bancos">Bancos</button>
     </nav>
     <div class="clock">
       <span><span class="num" id="reloj">--:--</span> <span>Buenos Aires</span></span>
@@ -236,6 +268,40 @@
     </div>
     <div class="headlines" id="titulares"></div>
     <div id="macroGrid"></div>
+  </div>
+
+  <!-- ============================ BANCOS ============================= -->
+  <div id="tab-bancos" hidden>
+    <div class="macro-bar">
+      <div class="intro">
+        <h2>Monitor bancario</h2>
+        <p id="bancosEstado">Leyendo la planilla…</p>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <a class="ghost btn" id="planillaLink" target="_blank" rel="noopener">Abrir planilla</a>
+        <button type="button" class="ghost" id="bancosRefresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="card err-card" id="bancosError" hidden></div>
+    <div id="bancosBody" hidden>
+      <div class="bank-cards" id="bankCards"></div>
+
+      <div class="sec"><span class="n">01</span><h2>Último trimestre</h2></div>
+      <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
+      <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
+
+      <div class="sec"><span class="n">02</span><h2>Evolución trimestral</h2></div>
+      <div class="legend" id="bankLegend"></div>
+      <div class="grid" id="bankCharts"></div>
+
+      <div class="sec"><span class="n">03</span><h2>Valuación</h2></div>
+      <div class="card table-wrap"><table class="btable" id="valTable"></table></div>
+      <p class="hint" id="valNota"></p>
+
+      <div class="sec"><span class="n">04</span><h2>Sensibilidad del P/BV justificado</h2></div>
+      <div class="card table-wrap"><table class="btable sens" id="sensTable"></table></div>
+      <p class="hint" id="sensNota"></p>
+    </div>
   </div>
 </main>
 
@@ -356,7 +422,9 @@ function setStatus(kind, text) {
 }
 
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
-const suscriptos = () => [...new Set([...wanted, ...FX_SYMS])];
+// Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
+let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
@@ -401,6 +469,7 @@ function recibir(sym, md, reemplazar) {
   state[sym] = reemplazar ? md : { ...(prev || {}), ...md };
   if (wanted.includes(sym)) paintRow(sym, state[sym], prev);
   if (FX_SYMS.includes(sym)) fxEnVivo();
+  if (BANK_SYMS.includes(sym)) bancosEnVivo();
 }
 
 function handle(msg) {
@@ -561,7 +630,7 @@ function niceTicks(lo, hi, n = 3) {
 
 function chart(el, pts, o) {
   charts.set(el, [pts, o]);
-  drawChart(el, pts, o);
+  o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
 }
 
 function drawChart(el, pts, o) {
@@ -649,7 +718,12 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(redibujar, 150);
 });
-function redibujar() { for (const [el, [pts, o]] of charts) drawChart(el, pts, o); }
+function redibujar() {
+  for (const [el, [pts, o]] of charts) {
+    if (!el.isConnected) { charts.delete(el); continue; }   // gráficos reemplazados al recargar
+    o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
+  }
+}
 
 /* ======================================================================= */
 /*  MACRO: tarjetas                                                        */
@@ -1052,19 +1126,310 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 /* ======================================================================= */
-/*  Pestañas y arranque                                                    */
+/*  BANCOS: monitor que lee en vivo la planilla bancos_valuacion           */
 /* ======================================================================= */
 
+const SHEET_ID = "1r4ZuK14WNsQBR2hK0Tti02N0IPqx6iMnQpEYcbD2cbY";
+const sheetUrl = (nombre, rango) =>
+  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1&sheet=${encodeURIComponent(nombre)}&range=${rango}`;
+$("planillaLink").href = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
+
+// Lee un rango con la API de visualización de Google: filas como {encabezado: valor},
+// con los valores crudos (0,172 y no "17,2%"). Si la planilla no es pública, Google
+// redirige al login y el pedido falla: eso se informa como "privada".
+async function hoja(nombre, rango) {
+  let t;
+  try {
+    const r = await fetch(sheetUrl(nombre, rango), { cache: "no-store" });
+    t = await r.text();
+  } catch { throw new Error("privada"); }
+  if (!t.includes("setResponse")) throw new Error("privada");
+  const j = JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1));
+  if (j.status !== "ok") throw new Error(j.errors?.[0]?.detailed_message || "la planilla devolvió un error");
+  const cols = j.table.cols.map(c => (c.label || "").replace(/\s+/g, " ").trim());
+  return j.table.rows.map(row => Object.fromEntries(cols.map((c, i) => [c, row.c?.[i]?.v ?? null])));
+}
+
+const B = { calc: [], data: [], val: [], ipc: {}, ipcUlt: null, bancos: [], cargado: false };
+const colorBanco = (t) => `var(--b${(B.bancos.indexOf(t) % 4) + 1})`;
+const fx2 = (v) => v == null ? "—" : num(v, 2) + "x";
+const esNum = (v) => typeof v === "number" && !isNaN(v);
+
+// Métricas del último trimestre: [columna de CALC, nombre, dirección (+1 más es mejor, -1 menos es mejor, 0 neutro), formato]
+const P1 = (v) => pct(v, 1), P2 = (v) => pct(v, 2), P1s = (v) => pct(v, 1, true);
+const METRICAS = [
+  ["ROE", "ROE", 1, P1], ["ROE_aj", "ROE ajustado", 1, P1], ["ROTE", "ROTE", 1, P1], ["ROA", "ROA", 1, P2],
+  ["NIM", "Margen financiero (NIM)", 1, P1], ["CoR", "Costo de riesgo", -1, P1],
+  ["NPL", "Cartera irregular (NPL)", -1, P1], ["cobertura", "Cobertura con previsiones", 1, P1],
+  ["eficiencia", "Eficiencia (gastos / ingresos)", -1, P1], ["prest_real_t/t", "Préstamos reales t/t", 1, P1s],
+  ["titulos_%act", "Títulos públicos / activos", 0, P1], ["P/BV", "P/BV al cierre del trimestre", 0, fx2], ["P/TBV", "P/TBV al cierre", 0, fx2],
+];
+const EVOLUCION = [
+  ["ROE", "ROE", P1], ["ROE_aj", "ROE ajustado", P1], ["NIM", "Margen financiero (NIM)", P1], ["CoR", "Costo de riesgo", P1],
+  ["NPL", "Cartera irregular (NPL)", P1], ["cobertura", "Cobertura", P1], ["eficiencia", "Eficiencia", P1], ["P/BV", "P/BV al cierre", fx2],
+];
+
+const filasDe = (t) => B.calc.filter(r => r.ticker === t).sort((a, b) => a.trimestre < b.trimestre ? -1 : 1);
+const ultimo = (t) => filasDe(t).filter(r => esNum(r.ROE)).at(-1);
+const dataDe = (clave) => B.data.find(r => r.clave === clave);
+const valDe = (t) => B.val.find(r => r.ticker === t);
+
+// Precio: en vivo desde CGR si hay token; si no, el último cargado en la planilla.
+function precioBanco(t) {
+  const md = state[`${t} - 24hs`];
+  const p = md?.LA?.price;
+  if (p) return { p, vivo: true, var1: md.CL?.price ? p / md.CL.price - 1 : null };
+  const u = ultimo(t), d = u && dataDe(u.clave);
+  return d && esNum(d.precio_local) ? { p: d.precio_local, vivo: false, trimestre: u.trimestre } : null;
+}
+
+// P/BV de hoy: precio / valor libro por acción. El libro del último balance está en la
+// moneda de su fila (moneda_reexpr); se lleva a pesos de hoy con el último IPC mensual.
+function pbvHoy(t) {
+  const u = ultimo(t), pr = precioBanco(t);
+  if (!u || !pr) return null;
+  if (!pr.vivo) return { pbv: u["P/BV"], ptbv: u["P/TBV"], vivo: false };
+  const mon = dataDe(u.clave)?.moneda_reexpr;
+  const aj = B.ipcUlt && B.ipc[mon] ? B.ipcUlt.v / B.ipc[mon] : null;
+  if (!aj || !esNum(u.book_x_accion)) return { pbv: u["P/BV"], ptbv: u["P/TBV"], vivo: false };
+  return { pbv: pr.p / (u.book_x_accion * aj), ptbv: pr.p / (u.tbook_x_accion * aj), vivo: true, aj };
+}
+
+const pbvJust = (roe, g, ke) => ke > g ? (roe - g) / (ke - g) : null;
+const roeImpl = (pbv, g, ke) => pbv * (ke - g) + g;
+
+function valuacion(t) {
+  const v = valDe(t), h = pbvHoy(t);
+  if (!v || !h || !esNum(h.pbv)) return null;
+  const ke = { bueno: v["Ke bueno"], base: v["Ke base"], malo: v["Ke malo"] };
+  const just = Object.fromEntries(Object.entries(ke).map(([k, x]) => [k, pbvJust(v.ROE_sost, v.g, x)]));
+  const impl = Object.fromEntries(Object.entries(ke).map(([k, x]) => [k, roeImpl(h.pbv, v.g, x)]));
+  return { ...h, roeSost: v.ROE_sost, g: v.g, ke, just, impl, potencial: just.base != null ? just.base / h.pbv - 1 : null };
+}
+
+function pintarTarjetasBancos() {
+  $("bankCards").innerHTML = B.bancos.map(t => {
+    const u = ultimo(t), pr = precioBanco(t), va = valuacion(t);
+    if (!u) return "";
+    const precio = pr ? `<span class="big">${num(pr.p, 2)}</span>` : `<span class="big">—</span>`;
+    const chg = pr?.vivo && pr.var1 != null ? pill(pr.var1, pct(Math.abs(pr.var1), 2), 1) : "";
+    const etiqueta = pr?.vivo ? `<span class="live">EN VIVO</span>` : `<span class="live late" title="Sin token: precio cargado en la planilla">PLANILLA ${pr?.trimestre || ""}</span>`;
+    return `<article class="card bcard" style="--c:${colorBanco(t)}">
+      <div class="row2"><span class="tk">${t}</span><span class="src">Balance ${u.trimestre}</span></div>
+      <div class="row2" style="margin-top:12px">${precio}${chg}</div>
+      <div style="margin-top:6px">${etiqueta}</div>
+      <dl>
+        <dt>P/BV ${va?.vivo ? "hoy" : "al cierre"}</dt><dd>${fx2(va?.pbv)}</dd>
+        <dt>P/BV justificado (Ke base)</dt><dd>${fx2(va?.just.base)}</dd>
+        <dt>Potencial</dt><dd>${va?.potencial != null ? pill(va.potencial, pct(Math.abs(va.potencial), 0), 1) : "—"}</dd>
+        <dt>ROE que descuenta el precio</dt><dd>${va ? pct(va.impl.base, 1) : "—"}</dd>
+        <dt>ROE último trimestre</dt><dd>${pct(u.ROE, 1)}</dd>
+        <dt>NPL · cobertura</dt><dd>${pct(u.NPL, 1)} · ${pct(u.cobertura, 0)}</dd>
+      </dl>
+    </article>`;
+  }).join("");
+}
+
+function pintarTablaBancos() {
+  const us = B.bancos.map(ultimo);
+  let h = `<thead><tr><th>Métrica</th>${B.bancos.map((t, i) => `<th><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}<br><span class="src">${us[i]?.trimestre || ""}</span></th>`).join("")}</tr></thead><tbody>`;
+  for (const [k, nombre, dir, f] of METRICAS) {
+    const vals = us.map(u => u && esNum(u[k]) ? u[k] : null);
+    const validos = vals.filter(v => v != null);
+    const mejor = dir && validos.length > 1 ? (dir > 0 ? Math.max(...validos) : Math.min(...validos)) : null;
+    h += `<tr><td>${nombre}</td>${vals.map(v => v == null ? `<td class="na">—</td>` : `<td class="${v === mejor ? "best" : ""}">${f(v)}</td>`).join("")}</tr>`;
+  }
+  $("bankTable").innerHTML = h + "</tbody>";
+}
+
+function pintarValuacion() {
+  const filas = B.bancos.map(t => [t, valuacion(t)]).filter(([, v]) => v);
+  const v0 = filas[0]?.[1];
+  let h = `<thead><tr class="grp"><th></th><th colspan="2">Hoy</th><th colspan="3">P/BV justificado</th><th colspan="3">ROE que descuenta el precio</th><th></th></tr>
+    <tr><th>Banco</th><th>P/BV</th><th>ROE sost.</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Ke bueno</th><th>Ke base</th><th>Ke malo</th><th>Potencial</th></tr></thead><tbody>`;
+  for (const [t, v] of filas) {
+    h += `<tr><td class="sym"><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</td>
+      <td>${fx2(v.pbv)}</td><td>${pct(v.roeSost, 1)}</td>
+      <td>${fx2(v.just.bueno)}</td><td>${fx2(v.just.base)}</td><td>${fx2(v.just.malo)}</td>
+      <td>${pct(v.impl.bueno, 1)}</td><td>${pct(v.impl.base, 1)}</td><td>${pct(v.impl.malo, 1)}</td>
+      <td>${v.potencial != null ? pill(v.potencial, pct(Math.abs(v.potencial), 0), 1) : "—"}</td></tr>`;
+  }
+  $("valTable").innerHTML = h + "</tbody>";
+  if (v0) {
+    const vivo = filas.some(([, v]) => v.vivo);
+    $("valNota").innerHTML = `P/BV justificado = (ROE sostenible − g) / (Ke − g), con g = ${pct(v0.g, 1)} y Ke bueno ${pct(v0.ke.bueno, 2)} · base ${pct(v0.ke.base, 2)} · malo ${pct(v0.ke.malo, 2)} (hoja INPUTS). `
+      + `El ROE que descuenta el precio es la misma fórmula al revés: P/BV × (Ke − g) + g. `
+      + (vivo ? `P/BV de hoy: precio en vivo de CGR sobre el patrimonio del último balance, reexpresado a IPC de ${fMesL(B.ipcUlt.f)}.`
+              : `Sin token de CGR se usa el P/BV al cierre del último trimestre de la planilla.`);
+  }
+}
+
+function pintarSensibilidad() {
+  const v0 = valDe(B.bancos[0]);
+  if (!v0) return;
+  const g = v0.g, roes = [.06, .08, .10, .12, .14, .16, .18, .20, .22], kes = [.13, .14, .15, .16, .17, .18, .19, .20];
+  const cerca = (arr, x) => arr.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a);
+  const rS = cerca(roes, v0.ROE_sost), kS = cerca(kes, v0["Ke base"]);
+  const todos = roes.flatMap(r => kes.map(k => pbvJust(r, g, k))).filter(v => v != null);
+  const max = Math.max(...todos);
+  let h = `<thead><tr><th>ROE \\ Ke</th>${kes.map(k => `<th>${pct(k, 0)}</th>`).join("")}</tr></thead><tbody>`;
+  for (const r of roes) {
+    h += `<tr><td class="sym">${pct(r, 0)}</td>${kes.map(k => {
+      const v = pbvJust(r, g, k);
+      const a = v == null ? 0 : Math.round(Math.max(0, v) / max * 55);
+      return `<td class="${r === rS && k === kS ? "hot" : ""}" style="background:color-mix(in srgb, var(--accent) ${a}%, transparent)">${fx2(v)}</td>`;
+    }).join("")}</tr>`;
+  }
+  $("sensTable").innerHTML = h + "</tbody>";
+  const pbvs = B.bancos.map(t => pbvHoy(t)?.pbv).filter(esNum);
+  const prom = pbvs.length ? pbvs.reduce((a, b) => a + b, 0) / pbvs.length : null;
+  $("sensNota").innerHTML = `Recuadro: tu supuesto base (ROE ${pct(v0.ROE_sost, 0)}, Ke ${pct(v0["Ke base"], 2)}). g = ${pct(g, 1)}.`
+    + (prom != null ? ` Hoy el mercado paga en promedio <b class="num">${fx2(prom)}</b> el libro.` : "");
+}
+
+function pintarEvolucion() {
+  const xs = [...new Set(B.calc.filter(r => B.bancos.some(t => t === r.ticker) && esNum(r.ROE)).map(r => r.trimestre))].sort();
+  $("bankLegend").innerHTML = B.bancos.map(t => `<span><span class="swatch" style="--c:${colorBanco(t)}"></span>${t}</span>`).join("");
+  $("bankCharts").innerHTML = EVOLUCION.map(([k, nombre]) => `
+    <article class="card mcard"><div class="mhead"><h3>${nombre}</h3><span class="src">CALC</span></div>
+    <div class="chart" data-k="${k}"></div></article>`).join("");
+  for (const [k, nombre, f] of EVOLUCION) {
+    const series = B.bancos.map(t => {
+      const m = new Map(filasDe(t).map(r => [r.trimestre, esNum(r[k]) ? r[k] : null]));
+      return { name: t, color: colorBanco(t), vals: xs.map(x => m.get(x) ?? null) };
+    });
+    chart($("bankCharts").querySelector(`[data-k="${CSS.escape(k)}"]`), [], { label: nombre, multi: { xs, series }, fmt: f, fmtAxis: k === "P/BV" ? (v) => num(v, 1) + "x" : (v) => pct(v, 0) });
+  }
+}
+
+// Gráfico de varias líneas (una por banco) con tooltip que lista todos los valores del trimestre.
+function drawMulti(el, o) {
+  const { xs, series } = o.multi;
+  if (!xs.length || !el.clientWidth) return;
+  const W = el.clientWidth, H = 140, L = 44, R = 6, T = 8, B_ = 20;
+  const pw = W - L - R, ph = H - T - B_, n = xs.length;
+  const vals = series.flatMap(s => s.vals).filter(v => v != null);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const ticks = niceTicks(lo, hi);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks.at(-1));
+  const y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
+  const x = (i) => L + (n === 1 ? pw / 2 : i * pw / (n - 1));
+  const fq = (q) => `${q.slice(5)} ${q.slice(2, 4)}`;
+
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label}">`;
+  for (const t of ticks) {
+    s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3.5}" text-anchor="end">${o.fmtAxis(t)}</text>`;
+  }
+  if (lo < 0) s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  for (const se of series) {
+    let d = "", pen = false;
+    se.vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+    s += `<path class="ml" style="stroke:${se.color}" d="${d}"/>`;
+    // Un punto donde la serie empieza sola (un trimestre suelto no dibuja línea).
+    se.vals.forEach((v, i) => { if (v != null && se.vals[i - 1] == null && se.vals[i + 1] == null) s += `<circle class="md" r="3.5" cx="${x(i)}" cy="${y(v)}" style="fill:${se.color}"/>`; });
+  }
+  s += `<text class="ax" x="${L}" y="${H - 5}">${fq(xs[0])}</text><text class="ax" x="${W - R}" y="${H - 5}" text-anchor="end">${fq(xs.at(-1))}</text>`;
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const px = e.clientX - svg.getBoundingClientRect().left;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (pw / Math.max(1, n - 1)))));
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    const filas = series.map(se => [se, se.vals[i]]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
+    tip.innerHTML = `<span class="muted">${xs[i]}</span>` + filas.map(([se, v]) => `<br><span class="swatch" style="--c:${se.color}"></span>${se.name} <b>${o.fmt(v)}</b>`).join("");
+    tip.hidden = false;
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(W - tw, x(i) - tw / 2)) + "px";
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
+}
+
+function pintarBancos() {
+  pintarTarjetasBancos();
+  pintarTablaBancos();
+  pintarEvolucion();
+  pintarValuacion();
+  pintarSensibilidad();
+}
+
+// Cada tick de CGR repinta solo lo que depende del precio, como mucho una vez por cuadro.
+let bancosPendiente = false;
+function bancosEnVivo() {
+  if (!B.cargado || bancosPendiente) return;
+  bancosPendiente = true;
+  requestAnimationFrame(() => {
+    bancosPendiente = false;
+    pintarTarjetasBancos();
+    pintarValuacion();
+    pintarSensibilidad();
+  });
+}
+
+async function cargarBancos() {
+  $("bancosEstado").textContent = "Leyendo la planilla…";
+  try {
+    const [calc, data, val, ipc] = await Promise.all([
+      hoja("CALC", "A5:AC200"), hoja("DATA", "A5:AJ200"), hoja("VALUACION", "A5:G30"), hoja("INPUTS", "A29:B80"),
+    ]);
+    const esFila = (r) => r.ticker && /^\d{4}Q[1-4]$/.test(r.trimestre || "");
+    B.calc = calc.filter(esFila);
+    B.data = data.filter(esFila);
+    B.val = val.filter(r => r.ticker && esNum(r.ROE_sost));
+    B.ipc = Object.fromEntries(ipc.filter(r => r.trimestre && esNum(r.indice_IPC)).map(r => [r.trimestre, r.indice_IPC]));
+    B.bancos = [...new Set(B.calc.map(r => r.ticker))].filter(t => ultimo(t));
+    try {
+      const s = await datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, haceDias(240));
+      B.ipcUlt = s.n.at(-1);
+    } catch { B.ipcUlt = null; }
+
+    // Si la planilla suma o saca bancos, el feed se reengancha con la lista nueva.
+    const syms = B.bancos.map(t => `${t} - 24hs`);
+    if (syms.join() !== BANK_SYMS.join()) {
+      BANK_SYMS = syms;
+      if (ws) connect();
+    }
+
+    B.cargado = true;
+    $("bancosError").hidden = true;
+    $("bancosBody").hidden = false;
+    pintarBancos();
+    const vivo = store.get("cgr_token") ? "Precios en vivo desde CGR." : "Sin token: precios y P/BV de la planilla. Entrá con tu token en Mercado para el P/BV en vivo.";
+    $("bancosEstado").textContent = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos. ${vivo}`;
+  } catch (e) {
+    console.error(e);
+    $("bancosBody").hidden = !B.cargado;
+    $("bancosError").hidden = false;
+    $("bancosError").innerHTML = e.message === "privada"
+      ? `<h3>No puedo leer la planilla</h3>
+         <p>Google no la deja leer desde afuera: tiene que estar compartida con <b>cualquiera que tenga el vínculo</b>.</p>
+         <p>En la planilla: <b>Compartir</b> → <b>Acceso general</b> → <b>Cualquier persona que tenga el vínculo</b> → rol <b>Lector</b>. Después tocá <b>Actualizar</b>.</p>`
+      : `<h3>Error leyendo la planilla</h3><p>${e.message}</p>`;
+    $("bancosEstado").textContent = B.cargado ? "Mostrando la última lectura buena." : "";
+  }
+}
+
+$("bancosRefresh").addEventListener("click", cargarBancos);
+setInterval(() => {
+  if (tab === "bancos" && document.visibilityState === "visible") cargarBancos();
+}, 10 * 60 * 1000);
+
+/* ======================================================================= */
+/*  Pestañas                                                               */
+/* ======================================================================= */
+
+const TABS = ["mercado", "macro", "bancos"];
 let tab = null;
 
 function setTab(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
-  $("tab-mercado").hidden = t !== "mercado";
-  $("tab-macro").hidden = t !== "macro";
+  for (const x of TABS) $("tab-" + x).hidden = x !== t;
   store.set("tab", t);
   history.replaceState(null, "", "#" + t);
-  if (t === "macro") redibujar();   // los gráficos no se dibujan mientras la pestaña está oculta
+  redibujar();   // los gráficos no se dibujan mientras su pestaña está oculta
 }
 
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
@@ -1073,8 +1438,9 @@ armarCinta();
 armarMacro();
 if (store.get("cgr_token")) showApp(); else showLogin();
 const inicial = location.hash.slice(1);
-setTab(["mercado", "macro"].includes(inicial) ? inicial : store.get("tab") || "mercado");
+setTab(TABS.includes(inicial) ? inicial : TABS.includes(store.get("tab")) ? store.get("tab") : "mercado");
 cargarMacro();   // siempre: alimenta la cinta aunque se abra en Mercado
+cargarBancos();
 </script>
 </body>
 </html>
