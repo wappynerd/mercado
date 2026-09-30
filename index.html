@@ -443,7 +443,7 @@ function setStatus(kind, text) {
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
 // Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
 let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
-const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs"];
+const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs", "AL30C - 24hs"];
 const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
@@ -1666,12 +1666,22 @@ function pintarLegTabla() {
   $("legTable").innerHTML = h + "</tbody>";
 }
 
+// Canje de hoy = AL30D / AL30C − 1 con precios actuales (CGR en vivo o Data912); si no hay, el último cierre.
+function canje(ult) {
+  const d = precioLeg("AL30D"), c = precioLeg("AL30C");
+  if (!d || !c) return ult ? `CCL sobre MEP: <span class="num">${pct(ult.v, 2)}</span> al cierre del ${fDia(ult.f)}.` : "—";
+  const v = d.p / c.p - 1, ant = L.canje.filter(p => p.f < hoy()).at(-1);
+  const dv = ant ? (v - ant.v) * 100 : null;
+  const cuando = d.fuente === "cgr" && c.fuente === "cgr" ? "en vivo" : "hoy, Data912";
+  return `CCL sobre MEP: <span class="num">${pct(v, 2)}</span> ${dv != null ? pill(dv, num(Math.abs(dv), 2) + " pp", 0) : ""} <span class="muted">(${cuando}; cierre anterior ${ant ? pct(ant.v, 2) : "—"})</span>`;
+}
+
 function pintarLegStrip() {
   const dias = Math.round((Date.parse(PRESIDENCIALES) - Date.parse(hoy())) / 864e5);
   const c = L.canje.at(-1);
   $("legStrip").innerHTML = [
     ["Presidenciales 2027", `Faltan <span class="num">${num(dias, 0)}</span> días (${fDia(PRESIDENCIALES)}, todavía sin convocar).`],
-    ["Canje", c ? `CCL sobre MEP: <span class="num">${pct(c.v, 2)}</span> al ${fDia(c.f)}.` : "—"],
+    ["Canje", canje(c)],
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 }
 
