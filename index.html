@@ -166,6 +166,14 @@
   .grid-feat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   @media (max-width: 760px) { .grid-feat { grid-template-columns: minmax(0, 1fr); } }
 
+  .btable tr.grp th { text-align: center; color: var(--accent); border-bottom: 0; padding-bottom: 0; background: var(--panel2); }
+  #legTable th:first-child, #legTable td:first-child { width: auto; }
+  .rangos { display: inline-flex; }
+  .rangos button { padding: 9px 10px; margin-left: -1px; }
+  .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
+  .chart .mk { stroke: #5b6573; stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .mkl { fill: var(--muted); font: 9px var(--mono); }
+
   footer { max-width: 1440px; margin: 0 auto; padding: 8px 16px 24px; color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); }
 </style>
 </head>
@@ -184,6 +192,7 @@
       <button type="button" role="tab" data-tab="mercado"><kbd>1</kbd>Mercado</button>
       <button type="button" role="tab" data-tab="macro"><kbd>2</kbd>Macro</button>
       <button type="button" role="tab" data-tab="bancos"><kbd>3</kbd>Bancos</button>
+      <button type="button" role="tab" data-tab="legislacion"><kbd>4</kbd>Legislación</button>
     </nav>
     <div class="clock">
       <span>BA <span class="num" id="reloj">--:--</span></span>
@@ -268,6 +277,40 @@
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
       <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a la moneda que indica cada fila de la planilla.</p>
 
+    </div>
+  </div>
+
+  <!-- ========================== LEGISLACIÓN ========================== -->
+  <div id="tab-legislacion" hidden>
+    <div class="macro-bar">
+      <div class="intro">
+        <h2>Spread de legislación</h2>
+        <p id="legEstado">Bajando la historia de los bonos…</p>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <span class="rangos" id="legRangos">
+          <button type="button" class="ghost" data-r="182">6M</button><button type="button" class="ghost" data-r="365">1A</button><button type="button" class="ghost" data-r="730">2A</button><button type="button" class="ghost" data-r="0">Todo</button>
+        </span>
+        <button type="button" class="ghost" id="legRefresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="card err-card" id="legError" hidden></div>
+    <div id="legBody" hidden>
+      <div class="headlines" id="legStrip"></div>
+
+      <div class="sec"><h2>Tablero por tramo · ley local (AL) contra ley Nueva York (GD)</h2></div>
+      <div class="card table-wrap"><table class="btable" id="legTable"></table></div>
+      <p class="hint">Precios en dólares MEP (especie D) en las dos patas, así AL y GD se comparan en la misma moneda de liquidación. Ratio = AL / GD: si sube, se comprime el castigo por ley local. Spread = TIR AL − TIR GD, en puntos básicos. z: desvíos contra las últimas 60 ruedas.</p>
+
+      <div class="sec"><h2>Evolución</h2></div>
+      <div class="legend" id="legLegend"></div>
+      <div class="grid grid-feat">
+        <article class="card mcard"><div class="mhead"><h3>Spread de TIR (pb)</h3><span class="src">TIR AL − TIR GD</span></div><div class="chart tall" id="legSpread"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Ratio AL / GD</h3><span class="src">Especie D</span></div><div class="chart tall" id="legRatio"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Volumen del ley local</h3><span class="src">% del volumen del par en pesos · media 20r</span></div><div class="chart tall" id="legVol"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Canje (CCL / MEP − 1)</h3><span class="src">AL30D / AL30C</span></div><div class="chart tall" id="legCanje"></div></article>
+      </div>
+      <p class="hint" id="legNota"></p>
     </div>
   </div>
 </main>
@@ -401,7 +444,8 @@ function setStatus(kind, text) {
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
 // Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
 let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
-const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS])];
+const LEG_SYMS = ["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b}D - 24hs`);
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
@@ -447,6 +491,7 @@ function recibir(sym, md, reemplazar) {
   if (wanted.includes(sym)) paintRow(sym, state[sym], prev);
   if (FX_SYMS.includes(sym)) fxEnVivo();
   if (BANK_SYMS.includes(sym)) bancosEnVivo();
+  if (LEG_SYMS.includes(sym)) legEnVivo();
 }
 
 function handle(msg) {
@@ -1298,7 +1343,7 @@ function drawMulti(el, o) {
   const ref = o.refLine
     ? `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(o.refLine.v)}" y2="${y(o.refLine.v)}"/><text class="ax" x="${W - R}" y="${y(o.refLine.v) - 4}" text-anchor="end" style="fill:var(--sun)">${o.refLine.label} ${o.fmt(o.refLine.v)}</text>`
     : "";
-  const fq = (q) => /^\d{4}Q/.test(q) ? `${q.slice(5)} ${q.slice(2, 4)}` : q;
+  const fq = (q) => /^\d{4}Q/.test(q) ? `${q.slice(5)} ${q.slice(2, 4)}` : /^\d{4}-\d{2}-\d{2}$/.test(q) ? fDia(q) : q;
 
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label}">`;
   for (const t of ticks) {
@@ -1306,13 +1351,18 @@ function drawMulti(el, o) {
   }
   if (lo < 0) s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
   s += ref;
+  for (const m of o.marks || []) {
+    const k = xs.findIndex(q => q >= m.f);
+    if (k <= 0) continue;
+    s += `<line class="mk" x1="${x(k)}" x2="${x(k)}" y1="${T}" y2="${T + ph}"/><text class="mkl" x="${x(k) + 3}" y="${T + 9}">${m.label}</text>`;
+  }
   for (const se of series) {
     let d = "", pen = false;
     se.vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
     s += `<path class="ml" style="stroke:${se.color}" d="${d}"/>`;
     // Punto en los trimestres sueltos (no dibujan línea) y en el valor de hoy.
     se.vals.forEach((v, i) => {
-      const suelto = v != null && se.vals[i - 1] == null && se.vals[i + 1] == null;
+      const suelto = n < 60 && v != null && se.vals[i - 1] == null && se.vals[i + 1] == null;
       if ((suelto || (esHoy && i === n - 1 && v != null))) s += `<circle class="md" r="4" cx="${x(i)}" cy="${y(v)}" style="fill:${se.color}"/>`;
     });
   }
@@ -1464,11 +1514,229 @@ setInterval(() => {
   if (tab === "bancos" && document.visibilityState === "visible") cargarBancos();
 }, 10 * 60 * 1000);
 
+
+/* ======================================================================= */
+/*  LEGISLACIÓN: ley local (AL) contra ley Nueva York (GD)                 */
+/* ======================================================================= */
+//
+// Convenciones del proyecto spread_legislacion (AGENTS.md §10.1):
+//   ratio  = AL / GD          -> si sube, se comprime el castigo por ley local
+//   spread = TIR AL − TIR GD  -> en pb, positivo en condiciones normales
+//   canje  = CCL / MEP − 1
+// Las dos patas se toman en especie D (MEP): misma moneda de liquidación, no hace falta netear el canje.
+
+const LEG_PARES = [["29", "AL29", "GD29"], ["30", "AL30", "GD30"], ["35", "AL35", "GD35"], ["38", "AE38", "GD38"], ["41", "AL41", "GD41"]];
+// Paleta categórica validada (modo oscuro), en orden fijo: el tramo conserva su color siempre.
+const LEG_COLORES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
+const ELECCIONES = [{ f: "2025-09-07", label: "PBA" }, { f: "2025-10-26", label: "Legislativas" }];
+const PRESIDENCIALES = "2027-10-24";   // cuarto domingo de octubre; todavía no convocadas
+const Z_VENTANA = 60, VOL_VENTANA = 20;
+
+// Cronogramas completos por lámina de 100 (reference/cashflows.json de spread_legislacion),
+// con los pagos ya vencidos: así la TIR sale bien a cualquier fecha pasada.
+const FLUJOS = {"AL29":[["2021-07-12",0.847222],["2022-01-10",0.5],["2022-07-11",0.5],["2023-01-09",0.5],["2023-07-10",0.5],["2024-01-09",0.5],["2024-07-10",0.5],["2025-01-09",10.5],["2025-07-10",10.45],["2026-01-09",10.4],["2026-07-13",10.35],["2027-01-11",10.3],["2027-07-12",10.25],["2028-01-10",10.2],["2028-07-10",10.15],["2029-01-09",10.1],["2029-07-10",10.05]],"GD29":[["2021-07-12",0.847222],["2022-01-10",0.5],["2022-07-11",0.5],["2023-01-09",0.5],["2023-07-10",0.5],["2024-01-09",0.5],["2024-07-10",0.5],["2025-01-09",10.5],["2025-07-10",10.45],["2026-01-09",10.4],["2026-07-13",10.35],["2027-01-11",10.3],["2027-07-12",10.25],["2028-01-10",10.2],["2028-07-10",10.15],["2029-01-09",10.1],["2029-07-10",10.05]],"AL30":[["2021-07-12",0.105903],["2022-01-10",0.25],["2022-07-11",0.25],["2023-01-09",0.25],["2023-07-10",0.25],["2024-01-09",0.375],["2024-07-10",4.375],["2025-01-09",8.36],["2025-07-10",8.33],["2026-01-09",8.3],["2026-07-13",8.27],["2027-01-11",8.24],["2027-07-12",8.21],["2028-01-10",8.42],["2028-07-10",8.35],["2029-01-09",8.28],["2029-07-10",8.21],["2030-01-09",8.14],["2030-07-10",8.07]],"GD30":[["2021-07-12",0.105903],["2022-01-10",0.25],["2022-07-11",0.25],["2023-01-09",0.25],["2023-07-10",0.25],["2024-01-09",0.375],["2024-07-10",4.375],["2025-01-09",8.36],["2025-07-10",8.33],["2026-01-09",8.3],["2026-07-13",8.27],["2027-01-11",8.24],["2027-07-12",8.21],["2028-01-10",8.42],["2028-07-10",8.35],["2029-01-09",8.28],["2029-07-10",8.21],["2030-01-09",8.14],["2030-07-10",8.07]],"AL35":[["2021-07-12",0.105903],["2022-01-10",0.5625],["2022-07-11",0.5625],["2023-01-09",0.75],["2023-07-10",0.75],["2024-01-09",1.8125],["2024-07-10",1.8125],["2025-01-09",2.0625],["2025-07-10",2.0625],["2026-01-09",2.0625],["2026-07-13",2.0625],["2027-01-11",2.0625],["2027-07-12",2.0625],["2028-01-10",2.375],["2028-07-10",2.375],["2029-01-09",2.5],["2029-07-10",2.5],["2030-01-09",2.5],["2030-07-10",2.5],["2031-01-09",12.5],["2031-07-10",12.25],["2032-01-09",12.0],["2032-07-12",11.75],["2033-01-10",11.5],["2033-07-11",11.25],["2034-01-09",11.0],["2034-07-10",10.75],["2035-01-09",10.5],["2035-07-10",10.25]],"GD35":[["2021-07-12",0.105903],["2022-01-10",0.5625],["2022-07-11",0.5625],["2023-01-09",0.75],["2023-07-10",0.75],["2024-01-09",1.8125],["2024-07-10",1.8125],["2025-01-09",2.0625],["2025-07-10",2.0625],["2026-01-09",2.0625],["2026-07-13",2.0625],["2027-01-11",2.0625],["2027-07-12",2.0625],["2028-01-10",2.375],["2028-07-10",2.375],["2029-01-09",2.5],["2029-07-10",2.5],["2030-01-09",2.5],["2030-07-10",2.5],["2031-01-09",12.5],["2031-07-10",12.25],["2032-01-09",12.0],["2032-07-12",11.75],["2033-01-10",11.5],["2033-07-11",11.25],["2034-01-09",11.0],["2034-07-10",10.75],["2035-01-09",10.5],["2035-07-10",10.25]],"AE38":[["2021-07-12",0.105903],["2022-01-10",1.0],["2022-07-11",1.0],["2023-01-09",1.9375],["2023-07-10",1.9375],["2024-01-09",2.125],["2024-07-10",2.125],["2025-01-09",2.5],["2025-07-10",2.5],["2026-01-09",2.5],["2026-07-13",2.5],["2027-01-11",2.5],["2027-07-12",7.045455],["2028-01-10",6.931819],["2028-07-10",6.818182],["2029-01-09",6.704546],["2029-07-10",6.59091],["2030-01-09",6.477273],["2030-07-10",6.363637],["2031-01-09",6.25],["2031-07-10",6.136364],["2032-01-09",6.022728],["2032-07-12",5.909091],["2033-01-10",5.795455],["2033-07-11",5.681819],["2034-01-09",5.568182],["2034-07-10",5.454546],["2035-01-09",5.340909],["2035-07-10",5.227273],["2036-01-09",5.113637],["2036-07-10",5.0],["2037-01-09",4.886364],["2037-07-10",4.772728],["2038-01-11",4.659081]],"GD38":[["2021-07-12",0.105903],["2022-01-10",1.0],["2022-07-11",1.0],["2023-01-09",1.9375],["2023-07-10",1.9375],["2024-01-09",2.125],["2024-07-10",2.125],["2025-01-09",2.5],["2025-07-10",2.5],["2026-01-09",2.5],["2026-07-13",2.5],["2027-01-11",2.5],["2027-07-12",7.045455],["2028-01-10",6.931818],["2028-07-10",6.818182],["2029-01-09",6.704545],["2029-07-10",6.590909],["2030-01-09",6.477273],["2030-07-10",6.363636],["2031-01-09",6.25],["2031-07-10",6.136364],["2032-01-09",6.022727],["2032-07-12",5.909091],["2033-01-10",5.795454],["2033-07-11",5.681818],["2034-01-09",5.568182],["2034-07-10",5.454545],["2035-01-09",5.340909],["2035-07-10",5.227273],["2036-01-09",5.113636],["2036-07-10",5.0],["2037-01-09",4.886363],["2037-07-10",4.772727],["2038-01-11",4.659081]],"AL41":[["2021-07-12",0.105903],["2022-01-10",1.25],["2022-07-11",1.25],["2023-01-09",1.75],["2023-07-10",1.75],["2024-01-09",1.75],["2024-07-10",1.75],["2025-01-09",1.75],["2025-07-10",1.75],["2026-01-09",1.75],["2026-07-13",1.75],["2027-01-11",1.75],["2027-07-12",1.75],["2028-01-10",5.321429],["2028-07-10",5.258929],["2029-01-09",5.196429],["2029-07-10",5.133929],["2030-01-09",5.660714],["2030-07-10",5.573661],["2031-01-09",5.486607],["2031-07-10",5.399553],["2032-01-09",5.3125],["2032-07-12",5.225446],["2033-01-10",5.138393],["2033-07-11",5.051339],["2034-01-09",4.964286],["2034-07-10",4.877232],["2035-01-09",4.790178],["2035-07-10",4.703125],["2036-01-09",4.616071],["2036-07-10",4.529018],["2037-01-09",4.441964],["2037-07-10",4.354911],["2038-01-11",4.267857],["2038-07-12",4.180803],["2039-01-10",4.09375],["2039-07-11",4.006696],["2040-01-09",3.919643],["2040-07-10",3.832589],["2041-01-09",3.745535],["2041-07-10",3.65847]],"GD41":[["2021-07-12",0.105903],["2022-01-10",1.25],["2022-07-11",1.25],["2023-01-09",1.75],["2023-07-10",1.75],["2024-01-09",1.75],["2024-07-10",1.75],["2025-01-09",1.75],["2025-07-10",1.75],["2026-01-09",1.75],["2026-07-13",1.75],["2027-01-11",1.75],["2027-07-12",1.75],["2028-01-10",5.321429],["2028-07-10",5.258929],["2029-01-09",5.196429],["2029-07-10",5.133929],["2030-01-09",5.660714],["2030-07-10",5.573661],["2031-01-09",5.486607],["2031-07-10",5.399553],["2032-01-09",5.3125],["2032-07-12",5.225446],["2033-01-10",5.138393],["2033-07-11",5.051339],["2034-01-09",4.964286],["2034-07-10",4.877232],["2035-01-09",4.790178],["2035-07-10",4.703125],["2036-01-09",4.616071],["2036-07-10",4.529018],["2037-01-09",4.441964],["2037-07-10",4.354911],["2038-01-11",4.267857],["2038-07-12",4.180803],["2039-01-10",4.09375],["2039-07-11",4.006696],["2040-01-09",3.919643],["2040-07-10",3.832589],["2041-01-09",3.745535],["2041-07-10",3.65847]]};
+
+// TIR anual efectiva por bisección, igual que models/cashflows.ytm. El precio ya es sucio.
+function tir(precio, bono, liq) {
+  if (!esNum(precio) || precio <= 0) return null;
+  const t0 = Date.parse(liq);
+  const fut = FLUJOS[bono].filter(([f]) => f > liq).map(([f, m]) => [(Date.parse(f) - t0) / 864e5 / 365, m]);
+  if (!fut.length) return null;
+  const vp = (r) => fut.reduce((a, [t, m]) => a + m / (1 + r) ** t, 0);
+  let lo = -0.95, hi = 5;
+  if (vp(lo) < precio) return null;
+  for (let k = 0; k < 80; k++) { const mid = (lo + hi) / 2; vp(mid) > precio ? lo = mid : hi = mid; }
+  return (lo + hi) / 2;
+}
+
+// Data912 tiene cierres erróneos sueltos (fuera del rango del día). Se reemplazan por
+// el punto medio del rango para no inventar un salto en el spread.
+function limpiar(filas) {
+  let corregidos = 0;
+  const m = new Map();
+  for (const x of filas) {
+    let c = x.c;
+    if (!esNum(c) || c <= 0) continue;
+    if (esNum(x.l) && esNum(x.h) && x.l > 0 && (c < x.l * 0.995 || c > x.h * 1.005)) { c = (x.l + x.h) / 2; corregidos++; }
+    m.set(x.date, { c, v: esNum(x.v) ? x.v : 0 });
+  }
+  return { m, corregidos };
+}
+
+const L = { pares: {}, canje: [], vivo: {}, corregidos: 0, cargado: false, rango: 730 };
+
+function zUltimo(vals) {
+  const w = vals.filter(esNum).slice(-Z_VENTANA);
+  if (w.length < Z_VENTANA / 2) return null;
+  const mu = w.reduce((a, b) => a + b, 0) / w.length;
+  const sd = Math.sqrt(w.reduce((a, b) => a + (b - mu) ** 2, 0) / (w.length - 1));
+  return sd > 0 ? (w.at(-1) - mu) / sd : null;
+}
+
+async function cargarLegislacion() {
+  $("legEstado").textContent = "Bajando la historia de los bonos…";
+  try {
+    const bonos = LEG_PARES.flatMap(([, a, g]) => [a, g]);
+    // Especie D para precios y TIR; especie en pesos para el volumen (es donde operan las dos patas).
+    const pedidos = [...bonos.map(b => `${b}D`), ...bonos, "AL30C"];
+    const res = await Promise.all(pedidos.map(t => getJSON(`https://data912.com/historical/bonds/${t}`, 30000)));
+    const H = {};
+    L.corregidos = 0;
+    pedidos.forEach((t, i) => { const r = limpiar(res[i]); H[t] = r.m; L.corregidos += r.corregidos; });
+
+    for (const [tramo, a, g] of LEG_PARES) {
+      const A = H[`${a}D`], G = H[`${g}D`];
+      const fechas = [...A.keys()].filter(f => G.has(f)).sort();
+      const serie = fechas.map(f => {
+        const pa = A.get(f).c, pg = G.get(f).c, ta = tir(pa, a, f), tg = tir(pg, g, f);
+        return { f, pa, pg, ratio: pa / pg, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null, va: A.get(f).v, vg: G.get(f).v };
+      });
+      // Participación del ley local en el volumen del par (especie en pesos), media móvil de 20 ruedas.
+      const VA = H[a], VG = H[g];
+      serie.forEach(p => { p.va = VA.get(p.f)?.v ?? 0; p.vg = VG.get(p.f)?.v ?? 0; });
+      serie.forEach((p, i) => {
+        const w = serie.slice(Math.max(0, i - VOL_VENTANA + 1), i + 1);
+        const sa = w.reduce((s, x) => s + x.va, 0), sg = w.reduce((s, x) => s + x.vg, 0);
+        p.vol = sa + sg > 0 && w.length === VOL_VENTANA ? sa / (sa + sg) : null;
+      });
+      L.pares[tramo] = { tramo, a, g, serie };
+    }
+    const MEP = H["AL30D"], CCL = H["AL30C"];
+    L.canje = [...MEP.keys()].filter(f => CCL.has(f)).sort().map(f => ({ f, v: MEP.get(f).c / CCL.get(f).c - 1 }));
+
+    try { await preciosLeg(); } catch (e) { console.error("data912 bonos", e); }
+    L.cargado = true;
+    $("legError").hidden = true;
+    $("legBody").hidden = false;
+    pintarLegislacion();
+  } catch (e) {
+    console.error(e);
+    $("legBody").hidden = !L.cargado;
+    $("legError").hidden = false;
+    $("legError").innerHTML = `<h3>No pude bajar la historia de los bonos</h3><p>${e.message}. Data912 a veces tarda; probá con Actualizar.</p>`;
+    $("legEstado").textContent = L.cargado ? "Mostrando la última lectura buena." : "";
+  }
+}
+
+// Precios en vivo sin token: panel de bonos de Data912 (se refresca cada minuto).
+async function preciosLeg() {
+  const d = await getJSON("https://data912.com/live/arg_bonds");
+  for (const x of d) if (/D$/.test(x.symbol)) {
+    const p = x.c > 0 ? x.c : x.px_bid > 0 && x.px_ask > 0 ? (x.px_bid + x.px_ask) / 2 : null;
+    if (p) L.vivo[x.symbol] = p;
+  }
+}
+
+// Precio de hoy de un bono: CGR en vivo si hay token, si no Data912.
+function precioLeg(b) {
+  const p = state[`${b}D - 24hs`]?.LA?.price;
+  if (p) return { p, fuente: "cgr" };
+  if (L.vivo[`${b}D`]) return { p: L.vivo[`${b}D`], fuente: "data912" };
+  return null;
+}
+
+// Fila de hoy de cada tramo (precio actual) y la anterior para las variaciones.
+function legHoy(par) {
+  const ult = par.serie.at(-1), h = hoy();
+  const pa = precioLeg(par.a), pg = precioLeg(par.g);
+  if (!pa || !pg) return { hoy: ult, ant: par.serie.at(-2), vivo: false };
+  const ta = tir(pa.p, par.a, h), tg = tir(pg.p, par.g, h);
+  const fila = { f: h, pa: pa.p, pg: pg.p, ratio: pa.p / pg.p, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null };
+  const ant = ult.f < h ? ult : par.serie.at(-2);
+  return { hoy: fila, ant, vivo: true, fuente: pa.fuente === "cgr" && pg.fuente === "cgr" ? "cgr" : "data912" };
+}
+
+function pintarLegTabla() {
+  const cols = ["Tramo", "AL (D)", "GD (D)", "Ratio AL/GD", "Δ día", "z 60r", "TIR AL", "TIR GD", "Spread pb", "Δ pb", "z 60r"];
+  let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="3">Ratio</th><th colspan="5">TIR y spread</th></tr>
+    <tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
+  LEG_PARES.forEach(([tramo], i) => {
+    const par = L.pares[tramo];
+    if (!par) return;
+    const { hoy: x, ant } = legHoy(par);
+    const hist = par.serie.filter(p => p.f < x.f);
+    const zr = zUltimo([...hist.map(p => p.ratio), x.ratio]);
+    const zs = zUltimo([...hist.map(p => p.spread), x.spread]);
+    const dr = ant ? x.ratio / ant.ratio - 1 : null;
+    const ds = ant && esNum(ant.spread) && esNum(x.spread) ? x.spread - ant.spread : null;
+    const zfmt = (z) => z == null ? "—" : `<span style="color:${Math.abs(z) >= 1.5 ? "var(--accent)" : "inherit"}">${signo(z)}${num(z, 1)}</span>`;
+    h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${par.a} / ${par.g}</td>
+      <td>${num(x.pa, 2)}</td><td>${num(x.pg, 2)}</td>
+      <td><b>${num(x.ratio, 4)}</b></td><td>${dr == null ? "—" : pill(dr, pct(Math.abs(dr), 2), 1)}</td><td>${zfmt(zr)}</td>
+      <td>${pct(x.ta, 2)}</td><td>${pct(x.tg, 2)}</td>
+      <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td><td>${zfmt(zs)}</td></tr>`;
+  });
+  $("legTable").innerHTML = h + "</tbody>";
+}
+
+function pintarLegStrip() {
+  const dias = Math.round((Date.parse(PRESIDENCIALES) - Date.parse(hoy())) / 864e5);
+  const c = L.canje.at(-1);
+  const p30 = L.pares["30"], x30 = p30 && legHoy(p30).hoy;
+  // Mayor y menor castigo hoy, por spread de TIR.
+  const filas = LEG_PARES.map(([t]) => [t, L.pares[t] && legHoy(L.pares[t]).hoy]).filter(([, x]) => x && esNum(x.spread));
+  const max = filas.reduce((a, b) => b[1].spread > a[1].spread ? b : a, filas[0]);
+  const min = filas.reduce((a, b) => b[1].spread < a[1].spread ? b : a, filas[0]);
+  $("legStrip").innerHTML = [
+    ["Presidenciales 2027", `Faltan <span class="num">${num(dias, 0)}</span> días (${fDia(PRESIDENCIALES)}, todavía sin convocar).`],
+    ["Tramo 30", x30 ? `Ratio <span class="num">${num(x30.ratio, 4)}</span> y spread de <span class="num">${num(x30.spread, 0)} pb</span>.` : "—"],
+    ["Castigo por ley", max ? `Mayor en el ${max[0]} (<span class="num">${num(max[1].spread, 0)} pb</span>), menor en el ${min[0]} (<span class="num">${num(min[1].spread, 0)} pb</span>).` : "—"],
+    ["Canje", c ? `CCL sobre MEP: <span class="num">${pct(c.v, 2)}</span> al ${fDia(c.f)}.` : "—"],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+}
+
+function pintarLegGraficos() {
+  const desde = L.rango ? haceDias(L.rango) : "0000";
+  const xs = [...new Set(LEG_PARES.flatMap(([t]) => (L.pares[t]?.serie || []).map(p => p.f)))].filter(f => f >= desde).sort();
+  const marks = ELECCIONES.filter(m => m.f >= desde);
+  const series = (campo) => LEG_PARES.map(([t, a, g], i) => {
+    const m = new Map((L.pares[t]?.serie || []).map(p => [p.f, p[campo]]));
+    return { name: `${a}/${g}`, color: LEG_COLORES[i], vals: xs.map(f => esNum(m.get(f)) ? m.get(f) : null) };
+  });
+  $("legLegend").innerHTML = LEG_PARES.map(([t, a, g], i) => `<span><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${a}/${g}</span>`).join("");
+  chart($("legSpread"), [], { label: "Spread de TIR", multi: { xs, series: series("spread") }, h: 250, marks, fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) });
+  chart($("legRatio"), [], { label: "Ratio AL/GD", multi: { xs, series: series("ratio") }, h: 250, marks, fmt: (v) => num(v, 4), fmtAxis: (v) => num(v, 2) });
+  chart($("legVol"), [], { label: "Volumen del ley local", multi: { xs, series: series("vol") }, h: 250, marks, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) });
+  const cj = L.canje.filter(p => p.f >= desde);
+  chart($("legCanje"), [], { label: "Canje", multi: { xs: cj.map(p => p.f), series: [{ name: "Canje", color: "var(--accent)", vals: cj.map(p => p.v) }] }, h: 250, marks, fmt: (v) => pct(v, 2), fmtAxis: (v) => pct(v, 1) });
+  document.querySelectorAll("#legRangos button").forEach(b => b.classList.toggle("on", +b.dataset.r === L.rango));
+}
+
+function pintarLegislacion() {
+  pintarLegStrip();
+  pintarLegTabla();
+  pintarLegGraficos();
+  const ult = L.pares["30"]?.serie.at(-1)?.f;
+  const vivo = LEG_PARES.some(([, a]) => precioLeg(a)?.fuente === "cgr") ? "Precios de hoy en vivo desde CGR."
+    : Object.keys(L.vivo).length ? "Precios de hoy vía Data912, cada minuto. Con tu token de CGR van en vivo." : "Sin precio de hoy: se muestra el último cierre.";
+  $("legEstado").textContent = `Historia de Data912 hasta el ${ult ? fDia(ult) : "—"}. ${vivo}`;
+  $("legNota").innerHTML = `TIR calculada con los flujos completos de cada bono (los mismos del proyecto spread_legislacion, validados contra CGR). `
+    + `Volumen: participación del ley local en el volumen del par en la especie en pesos, la más líquida para las dos patas; lo que importa es cómo cambia, no el nivel (el AL30 siempre concentra la mayor parte). `
+    + `Líneas punteadas: elecciones del 7-sep (PBA) y del 26-oct de 2025. `
+    + (L.corregidos ? `Se corrigieron ${L.corregidos} cierres de Data912 que caían fuera del rango del día (se usó el punto medio del rango).` : "");
+}
+
+let legPendiente = false;
+function legEnVivo() {
+  if (!L.cargado || legPendiente) return;
+  legPendiente = true;
+  requestAnimationFrame(() => { legPendiente = false; pintarLegTabla(); pintarLegStrip(); });
+}
+
+document.querySelectorAll("#legRangos button").forEach(b => b.addEventListener("click", () => { L.rango = +b.dataset.r; pintarLegGraficos(); }));
+$("legRefresh").addEventListener("click", cargarLegislacion);
+// Sin feed de CGR, los precios de hoy se refrescan cada minuto desde Data912.
+setInterval(async () => {
+  if (!L.cargado || tab !== "legislacion" || document.visibilityState !== "visible") return;
+  try { await preciosLeg(); legEnVivo(); } catch (e) { console.error("data912 bonos", e); }
+}, 60 * 1000);
+let legPedida = false;
+
 /* ======================================================================= */
 /*  Pestañas                                                               */
 /* ======================================================================= */
 
-const TABS = ["mercado", "macro", "bancos"];
+const TABS = ["mercado", "macro", "bancos", "legislacion"];
 let tab = null;
 
 function setTab(t) {
@@ -1478,6 +1746,7 @@ function setTab(t) {
   store.set("tab", t);
   history.replaceState(null, "", "#" + t);
   redibujar();   // los gráficos no se dibujan mientras su pestaña está oculta
+  if (t === "legislacion" && !legPedida) { legPedida = true; cargarLegislacion(); }
 }
 
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
