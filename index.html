@@ -300,13 +300,12 @@
 
       <div class="sec"><h2>Tablero por tramo · ley Nueva York (GD) contra ley local (AL)</h2></div>
       <div class="card table-wrap"><table class="btable" id="legTable"></table></div>
-      <p class="hint">Precios en pesos (24hs). Ratio = GD / AL: si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos: es el castigo por ley local. z: desvíos contra las últimas 60 ruedas.</p>
+      <p class="hint">Precios en pesos (24hs). Prima = (GD / AL − 1) × 100: cuánto más vale el ley Nueva York que el ley local; si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos.</p>
 
       <div class="sec"><h2>Evolución</h2></div>
       <div class="legend" id="legLegend"></div>
+      <article class="card mcard" style="margin-bottom:8px"><div class="mhead"><h3>Prima GD / AL − 1</h3><span class="src">En pesos · (GD / AL − 1) × 100</span></div><div class="chart tall" id="legRatio"></div></article>
       <div class="grid grid-feat">
-        <article class="card mcard"><div class="mhead"><h3>Spread de TIR (pb)</h3><span class="src">TIR AL − TIR GD</span></div><div class="chart tall" id="legSpread"></div></article>
-        <article class="card mcard"><div class="mhead"><h3>Ratio GD / AL</h3><span class="src">En pesos</span></div><div class="chart tall" id="legRatio"></div></article>
         <article class="card mcard"><div class="mhead"><h3>Volumen del GD</h3><span class="src">% del volumen del par en pesos · media 20r</span></div><div class="chart tall" id="legVol"></div></article>
         <article class="card mcard"><div class="mhead"><h3>Canje (CCL / MEP − 1)</h3><span class="src">AL30D / AL30C</span></div><div class="chart tall" id="legCanje"></div></article>
       </div>
@@ -1531,7 +1530,7 @@ const LEG_PARES = [["29", "AL29", "GD29"], ["30", "AL30", "GD30"], ["35", "AL35"
 const LEG_COLORES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
 const ELECCIONES = [{ f: "2025-09-07", label: "PBA" }, { f: "2025-10-26", label: "Legislativas" }];
 const PRESIDENCIALES = "2027-10-24";   // cuarto domingo de octubre; todavía no convocadas
-const Z_VENTANA = 60, VOL_VENTANA = 20;
+const VOL_VENTANA = 20;
 
 // Cronogramas completos por lámina de 100 (reference/cashflows.json de spread_legislacion),
 // con los pagos ya vencidos: así la TIR sale bien a cualquier fecha pasada.
@@ -1566,14 +1565,6 @@ function limpiar(filas) {
 
 const L = { pares: {}, canje: [], vivo: {}, corregidos: 0, cargado: false, rango: 730 };
 
-function zUltimo(vals) {
-  const w = vals.filter(esNum).slice(-Z_VENTANA);
-  if (w.length < Z_VENTANA / 2) return null;
-  const mu = w.reduce((a, b) => a + b, 0) / w.length;
-  const sd = Math.sqrt(w.reduce((a, b) => a + (b - mu) ** 2, 0) / (w.length - 1));
-  return sd > 0 ? (w.at(-1) - mu) / sd : null;
-}
-
 async function cargarLegislacion() {
   $("legEstado").textContent = "Bajando la historia de los bonos…";
   try {
@@ -1593,7 +1584,7 @@ async function cargarLegislacion() {
       const serie = fechas.map(f => {
         const pa = A.get(f).c, pg = G.get(f).c, mep = MEP.get(f);
         const ta = tir(pa / mep, a, f), tg = tir(pg / mep, g, f);
-        return { f, pa, pg, mep, ratio: pg / pa, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null, va: A.get(f).v, vg: G.get(f).v };
+        return { f, pa, pg, mep, ratio: pg / pa, prima: (pg / pa - 1) * 100, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null, va: A.get(f).v, vg: G.get(f).v };
       });
       // Participación del GD en el volumen del par (en pesos), media móvil de 20 ruedas.
       serie.forEach((p, i) => {
@@ -1656,24 +1647,21 @@ function legHoy(par) {
 }
 
 function pintarLegTabla() {
-  const cols = ["Par", "GD ($)", "AL ($)", "Ratio GD/AL", "Δ día", "z 60r", "TIR GD", "TIR AL", "Spread pb", "Δ pb", "z 60r"];
-  let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="3">Ratio</th><th colspan="5">TIR y spread</th></tr>
+  const cols = ["Par", "GD ($)", "AL ($)", "GD/AL − 1", "Δ día", "TIR GD", "TIR AL", "Spread pb", "Δ pb"];
+  let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="2">Prima</th><th colspan="4">TIR y spread</th></tr>
     <tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
   LEG_PARES.forEach(([tramo], i) => {
     const par = L.pares[tramo];
     if (!par) return;
     const { hoy: x, ant } = legHoy(par);
-    const hist = par.serie.filter(p => p.f < x.f);
-    const zr = zUltimo([...hist.map(p => p.ratio), x.ratio]);
-    const zs = zUltimo([...hist.map(p => p.spread), x.spread]);
-    const dr = ant ? x.ratio / ant.ratio - 1 : null;
+    // Prima del GD sobre el AL, en %; la variación del día va en puntos porcentuales.
+    const prima = (x.ratio - 1) * 100, dp = ant ? prima - (ant.ratio - 1) * 100 : null;
     const ds = ant && esNum(ant.spread) && esNum(x.spread) ? x.spread - ant.spread : null;
-    const zfmt = (z) => z == null ? "—" : `<span style="color:${Math.abs(z) >= 1.5 ? "var(--accent)" : "inherit"}">${signo(z)}${num(z, 1)}</span>`;
     h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${par.g} / ${par.a}</td>
       <td>${num(x.pg, 2)}</td><td>${num(x.pa, 2)}</td>
-      <td><b>${num(x.ratio, 4)}</b></td><td>${dr == null ? "—" : pill(dr, pct(Math.abs(dr), 2), -1)}</td><td>${zfmt(zr)}</td>
+      <td><b>${num(prima, 2)}%</b></td><td>${dp == null ? "—" : pill(dp, num(Math.abs(dp), 2) + " pp", -1)}</td>
       <td>${pct(x.tg, 2)}</td><td>${pct(x.ta, 2)}</td>
-      <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td><td>${zfmt(zs)}</td></tr>`;
+      <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td></tr>`;
   });
   $("legTable").innerHTML = h + "</tbody>";
 }
@@ -1681,15 +1669,8 @@ function pintarLegTabla() {
 function pintarLegStrip() {
   const dias = Math.round((Date.parse(PRESIDENCIALES) - Date.parse(hoy())) / 864e5);
   const c = L.canje.at(-1);
-  const p30 = L.pares["30"], x30 = p30 && legHoy(p30).hoy;
-  // Mayor y menor castigo hoy, por spread de TIR.
-  const filas = LEG_PARES.map(([t]) => [t, L.pares[t] && legHoy(L.pares[t]).hoy]).filter(([, x]) => x && esNum(x.spread));
-  const max = filas.reduce((a, b) => b[1].spread > a[1].spread ? b : a, filas[0]);
-  const min = filas.reduce((a, b) => b[1].spread < a[1].spread ? b : a, filas[0]);
   $("legStrip").innerHTML = [
     ["Presidenciales 2027", `Faltan <span class="num">${num(dias, 0)}</span> días (${fDia(PRESIDENCIALES)}, todavía sin convocar).`],
-    ["Tramo 30", x30 ? `Ratio GD/AL <span class="num">${num(x30.ratio, 4)}</span> y spread de <span class="num">${num(x30.spread, 0)} pb</span>.` : "—"],
-    ["Castigo por ley", max ? `Mayor en el ${max[0]} (<span class="num">${num(max[1].spread, 0)} pb</span>), menor en el ${min[0]} (<span class="num">${num(min[1].spread, 0)} pb</span>).` : "—"],
     ["Canje", c ? `CCL sobre MEP: <span class="num">${pct(c.v, 2)}</span> al ${fDia(c.f)}.` : "—"],
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 }
@@ -1703,8 +1684,7 @@ function pintarLegGraficos() {
     return { name: `${g}/${a}`, color: LEG_COLORES[i], vals: xs.map(f => esNum(m.get(f)) ? m.get(f) : null) };
   });
   $("legLegend").innerHTML = LEG_PARES.map(([t, a, g], i) => `<span><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${g}/${a}</span>`).join("");
-  chart($("legSpread"), [], { label: "Spread de TIR", multi: { xs, series: series("spread") }, h: 250, marks, fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) });
-  chart($("legRatio"), [], { label: "Ratio GD/AL", multi: { xs, series: series("ratio") }, h: 250, marks, fmt: (v) => num(v, 4), fmtAxis: (v) => num(v, 2) });
+  chart($("legRatio"), [], { label: "Prima GD/AL − 1", multi: { xs, series: series("prima") }, h: 250, marks, fmt: (v) => `${num(v, 2)}%`, fmtAxis: (v) => `${num(v, 0)}%` });
   chart($("legVol"), [], { label: "Volumen del GD", multi: { xs, series: series("vol") }, h: 250, marks, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) });
   const cj = L.canje.filter(p => p.f >= desde);
   chart($("legCanje"), [], { label: "Canje", multi: { xs: cj.map(p => p.f), series: [{ name: "Canje", color: "var(--accent)", vals: cj.map(p => p.v) }] }, h: 250, marks, fmt: (v) => pct(v, 2), fmtAxis: (v) => pct(v, 1) });
