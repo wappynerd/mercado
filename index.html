@@ -268,6 +268,16 @@
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
 
+      <div class="sec"><h2>Market cap contra patrimonio</h2></div>
+      <div class="headlines" id="capKpis" style="margin-top:0"></div>
+      <article class="card mcard" style="margin-top:8px">
+        <div class="mhead"><h3>Market cap y patrimonio del sistema · US$ M</h3>
+          <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#ffb000"></span>Market cap</span><span><span class="swatch" style="--c:#3987e5"></span>Patrimonio</span></span></div>
+        <div class="toolbar" style="margin:8px 0 0"><span class="rangos" id="capRangos"><button type="button" class="ghost" data-r="-1">Con los 4 bancos</button><button type="button" class="ghost" data-r="182">6M</button><button type="button" class="ghost" data-r="365">1A</button><button type="button" class="ghost" data-r="0">Todo</button></span></div>
+        <div class="chart" id="capChart" style="height:400px"><p class="hint">Bajando la historia de precios…</p></div>
+      </article>
+      <p class="hint" id="capNota"></p>
+
       <div class="sec"><h2>Tablero</h2></div>
       <div class="legend" id="bankLegend"></div>
       <div class="grid grid-feat" id="bankFeat"></div>
@@ -651,7 +661,7 @@ function niceTicks(lo, hi, n = 3) {
 
 function chart(el, pts, o) {
   charts.set(el, [pts, o]);
-  o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
+  o.draw ? o.draw(el) : o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
 }
 
 function drawChart(el, pts, o) {
@@ -742,7 +752,7 @@ window.addEventListener("resize", () => {
 function redibujar() {
   for (const [el, [pts, o]] of charts) {
     if (!el.isConnected) { charts.delete(el); continue; }   // gráficos reemplazados al recargar
-    o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
+    o.draw ? o.draw(el) : o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
   }
 }
 
@@ -1408,6 +1418,183 @@ function pintarEP() {
     + `El último punto usa el ROE del último trimestre y el P/BV con precio actual, con el libro ${textoIPC()}.`;
 }
 
+/* ---------- Market cap contra patrimonio ---------- */
+//
+// Market cap = precio (Data912) × acciones en circulación (DATA) / CCL implícito del AL30.
+// Patrimonio = libro por acción del último balance YA PUBLICADO de cada banco, ajustado por IPC hasta
+// cada día, × acciones / CCL. El libro sale del P/BV de la hoja DASH y del precio al cierre del
+// trimestre. Las dos líneas suman solo los bancos con balance publicado: su cociente es el P/BV del sistema.
+
+// Fechas de publicación de resultados (comunicados de cada banco / 6-K en la SEC). Si la columna
+// fecha_reporte de la hoja DATA tiene un valor, manda la planilla.
+const PUBLICACION = {
+  GGAL: { "2023Q4": "2024-03-04", "2024Q1": "2024-05-23", "2024Q2": "2024-08-22", "2024Q3": "2024-11-05", "2024Q4": "2025-02-28", "2025Q1": "2025-05-27",
+          "2025Q2": "2025-08-26", "2025Q3": "2025-11-25", "2025Q4": "2026-03-04", "2026Q1": "2026-05-13", "2026Q2": "2026-08-25" },
+  BMA:  { "2024Q1": "2024-05-22", "2024Q2": "2024-08-22", "2024Q3": "2024-11-27", "2024Q4": "2025-02-26", "2025Q1": "2025-05-28", "2025Q2": "2025-08-27",
+          "2025Q3": "2025-11-26", "2025Q4": "2026-02-26", "2026Q1": "2026-05-27", "2026Q2": "2026-08-19" },
+  BBAR: { "2025Q1": "2025-05-21", "2025Q2": "2025-08-20", "2025Q3": "2025-11-25", "2025Q4": "2026-03-04", "2026Q1": "2026-05-26", "2026Q2": "2026-08-27" },
+  SUPV: { "2024Q1": "2024-05-22", "2024Q2": "2024-08-14", "2024Q3": "2024-11-25", "2024Q4": "2025-03-10", "2025Q1": "2025-05-27", "2025Q2": "2025-08-13",
+          "2025Q3": "2025-11-25", "2025Q4": "2026-03-02", "2026Q1": "2026-05-06", "2026Q2": "2026-08-10" },
+};
+const finTrimestre = (q) => `${q.slice(0, 4)}-${{ 1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31" }[q[5]]}`;
+const CB = { hist: null, rango: -1, estimadas: 0 };
+
+// fecha_reporte de DATA puede venir como "Date(2024,2,4)" (celda fecha) o "04/03/2024" (texto).
+function aIso(v) {
+  if (!v) return null;
+  let m = /Date\((\d+),(\d+),(\d+)/.exec(v);
+  if (m) return `${m[1]}-${String(+m[2] + 1).padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+  return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
+}
+
+function fechaPublicacion(b, q) {
+  const planilla = aIso(B.data.find(r => r.ticker === b && r.trimestre === q)?.fecha_reporte);
+  if (planilla) return { f: planilla, est: false };
+  if (PUBLICACION[b]?.[q]) return { f: PUBLICACION[b][q], est: false };
+  return { f: isoLocal(new Date(Date.parse(finTrimestre(q)) + 70 * 864e5)), est: true };   // estimada
+}
+
+async function cargarCapBook() {
+  const bs = B.bancos;
+  const [hist, a30, a30c, ipcM] = await Promise.all([
+    Promise.all(bs.map(b => getJSON(`https://data912.com/historical/stocks/${b}`, 30000))),
+    getJSON("https://data912.com/historical/bonds/AL30", 30000),
+    getJSON("https://data912.com/historical/bonds/AL30C", 30000),
+    datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, "2023-06-01").then(s => s.n).catch(() => null),
+    preciosLeg().catch(() => null),   // CCL de hoy (AL30 / AL30C) para el punto en vivo
+  ]);
+  const P = {};
+  bs.forEach((b, i) => { P[b] = new Map(hist[i].filter(x => x.c > 0).map(x => [x.date, x.c])); });
+  const C = new Map(a30c.filter(x => x.c > 0).map(x => [x.date, x.c]));
+  const CCL = new Map(a30.filter(x => x.c > 0 && C.has(x.date)).map(x => [x.date, x.c / C.get(x.date)]));
+
+  // IPC mensual; si INDEC no responde, la tabla trimestral de INPUTS.
+  const IPC = new Map();
+  if (ipcM) ipcM.forEach(p => IPC.set(p.f.slice(0, 7), p.v));
+  else for (const [q, v] of Object.entries(B.ipc)) IPC.set(finTrimestre(q).slice(0, 7), v);
+  const meses = [...IPC.keys()].sort();
+  CB.ipcEn = (f) => {
+    const m = f.slice(0, 7);
+    if (IPC.has(m)) return IPC.get(m);
+    if (m > meses.at(-1)) return B.ipcHoy?.v ?? IPC.get(meses.at(-1));   // meses sin publicar: estimación REM
+    return IPC.get(meses.filter(x => x <= m).at(-1) ?? meses[0]);
+  };
+
+  const fechas = [...CCL.keys()].filter(f => f >= "2024-01-01" && bs.every(b => P[b].has(f))).sort();
+  const precioAl = (b, f) => { const d = fechas.filter(x => x <= f).at(-1); return d ? P[b].get(d) : null; };
+  const acciones = Object.fromEntries(bs.map(b => [b, B.data.filter(r => r.ticker === b && esNum(r.acciones_circ)).at(-1)?.acciones_circ]));
+
+  // Libro por acción al cierre de cada trimestre = precio al cierre / P/BV de DASH.
+  const pbv = B.dash.m["P/BV"];
+  const libros = [];
+  CB.estimadas = 0;
+  for (const b of bs) {
+    (pbv?.bancos[b] || []).forEach((v, i) => {
+      const q = B.dash.xs[i], fq = finTrimestre(q), p = precioAl(b, fq);
+      if (!esNum(v) || !p) return;
+      const pub = fechaPublicacion(b, q);
+      if (pub.est) CB.estimadas++;
+      libros.push({ b, q, fq, pub: pub.f, libro: p / v });
+    });
+  }
+  CB.vigente = (b, f) => libros.filter(x => x.b === b && x.pub < f).sort((x, y) => x.pub < y.pub ? -1 : 1).at(-1);
+  CB.acciones = acciones;
+
+  CB.hist = fechas.map(f => filaCapBook(f, (b) => P[b].get(f), CCL.get(f))).filter(r => r.n);
+  pintarCapBook();
+}
+
+// Una fila del gráfico: market cap y patrimonio de los bancos con balance publicado a esa fecha.
+function filaCapBook(f, precio, ccl) {
+  const r = { f, caps: {}, books: {}, qs: {}, capS: 0, bookS: 0, n: 0 };
+  for (const b of B.bancos) {
+    const x = CB.vigente(b, f), p = precio(b), a = CB.acciones[b];
+    if (!x || !esNum(p) || !esNum(a) || !ccl) continue;
+    r.caps[b] = p * a / ccl;
+    r.books[b] = x.libro * CB.ipcEn(f) / CB.ipcEn(x.fq) * a / ccl;
+    r.qs[b] = x.q;
+    r.capS += r.caps[b]; r.bookS += r.books[b]; r.n++;
+  }
+  return r;
+}
+
+// Serie completa: historia + hoy con precios actuales (CGR en vivo o Data912) y CCL de hoy.
+function serieCapBook() {
+  const h = CB.hist, u = h.at(-1), f = hoy();
+  const a = precioLeg("AL30"), c = precioLeg("AL30C");
+  if (!a || !c || u.f >= f) return h;
+  const r = filaCapBook(f, (b) => precioBanco(b)?.vivo ? precioBanco(b).p : null, a.p / c.p);
+  return r.n === u.n ? [...h, { ...r, hoy: true }] : h;
+}
+
+function pintarCapBook() {
+  if (!CB.hist?.length) return;
+  const todo = serieCapBook(), u = todo.at(-1);
+  const hace1 = todo.find(r => r.f >= haceDias(365));
+  const cuatro = todo.filter(r => r.n === 4).map(r => ({ ...r, p: r.capS / r.bookS }));
+  const mx = cuatro.reduce((a, r) => r.p > a.p ? r : a, cuatro[0]), mn = cuatro.reduce((a, r) => r.p < a.p ? r : a, cuatro[0]);
+  const cuando = u.hoy ? "hoy" : `al ${fDia(u.f)}`;
+  $("capKpis").innerHTML = [
+    ["Market cap del sistema", `<span class="num">US$ ${num(u.capS)} M</span> ${cuando}.` + (hace1 ? ` Hace un año: US$ ${num(hace1.capS)} M.` : "")],
+    ["Patrimonio del sistema", `<span class="num">US$ ${num(u.bookS)} M</span>.` + (hace1 ? ` Hace un año: US$ ${num(hace1.bookS)} M.` : "")],
+    ["P/BV del sistema", `<span class="num">${num(u.capS / u.bookS, 2)}x</span>.` + (mx ? ` Con los 4 bancos: máx ${num(mx.p, 2)}x (${fDia(mx.f)}), mín ${num(mn.p, 2)}x (${fDia(mn.f)}).` : "")],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+  chart($("capChart"), [], { draw: dibujarCapBook });
+  document.querySelectorAll("#capRangos button").forEach(b => b.classList.toggle("on", +b.dataset.r === CB.rango));
+  $("capNota").innerHTML = `Market cap: precio × acciones en circulación (hoja DATA) / CCL implícito del AL30. Patrimonio: libro por acción del último balance ya publicado de cada banco, ajustado por IPC hasta cada día, × acciones / CCL; el libro sale del P/BV de tu hoja DASH y del precio al cierre del trimestre. `
+    + `Cada banco cambia de libro recién la rueda siguiente a publicar su balance (fechas de los comunicados de cada banco; si cargás fecha_reporte en DATA, manda la planilla)`
+    + (CB.estimadas ? `; ${CB.estimadas} fecha${CB.estimadas > 1 ? "s" : ""} sin dato se estima${CB.estimadas > 1 ? "n" : ""} a 70 días del cierre` : "") + `. `
+    + `Las dos líneas suman solo los bancos con balance publicado; en "Todo" hay saltos cuando entra uno (marcas "+"). El patrimonio en dólares también se mueve con el tipo de cambio real.`;
+}
+
+function dibujarCapBook(el) {
+  const todo = serieCapBook();
+  const desde4 = todo.find(r => r.n === B.bancos.length)?.f;
+  const F = CB.rango === -1 ? todo.filter(r => r.f >= desde4) : CB.rango ? todo.filter(r => r.f >= haceDias(CB.rango)) : todo;
+  if (F.length < 2 || !el.clientWidth) return;
+  const W = el.clientWidth, H = 400, L = 58, R = 104, T = 14, B_ = 22, pw = W - L - R, ph = H - T - B_, n = F.length;
+  const tk = niceTicks(0, Math.max(...F.flatMap(r => [r.capS, r.bookS]))), hi = tk.at(-1);
+  const x = (i) => L + i * pw / (n - 1), y = (v) => T + ph - v / hi * ph;
+  const marcas = [...ELECCIONES];
+  F.forEach((r, i) => { if (i && r.n > F[i - 1].n) marcas.push({ f: r.f, label: "+" + Object.keys(r.books).filter(b => !(b in F[i - 1].books)).join(" ") }); });
+
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Market cap y patrimonio del sistema">`;
+  for (const t of tk) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${num(t)}</text>`;
+  for (const m of marcas) { const k = F.findIndex(r => r.f >= m.f); if (k > 0) s += `<line class="mk" x1="${x(k)}" x2="${x(k)}" y1="${T}" y2="${T + ph}"/><text class="mkl" x="${x(k) + 3}" y="${T + 10}">${m.label}</text>`; }
+  // Relleno entre líneas: ámbar si el mercado paga más que el libro, azul si paga menos.
+  for (let i = 0; i < n - 1; i++) {
+    const a = F[i], b = F[i + 1], arriba = a.capS + b.capS >= a.bookS + b.bookS;
+    s += `<path d="M${x(i)},${y(a.capS)}L${x(i + 1)},${y(b.capS)}L${x(i + 1)},${y(b.bookS)}L${x(i)},${y(a.bookS)}Z" fill="${arriba ? "#ffb000" : "#3987e5"}" opacity=".12"/>`;
+  }
+  const linea = (k) => F.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[k]).toFixed(1)}`).join("");
+  s += `<path d="${linea("bookS")}" fill="none" stroke="#3987e5" stroke-width="1.5"/><path d="${linea("capS")}" fill="none" stroke="#ffb000" stroke-width="1.5"/>`;
+  const u = F.at(-1);
+  let yc = y(u.capS), yb = y(u.bookS);
+  if (Math.abs(yc - yb) < 28) { const m = (yc + yb) / 2, sg = u.capS >= u.bookS ? -1 : 1; yc = m + sg * 14; yb = m - sg * 14; }
+  const et = (yy, c, t) => `<text x="${W - R + 8}" y="${yy + 4}" style="fill:${c};font:600 11px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:4px">${t}</text>`;
+  s += et(yc, "#ffb000", num(u.capS)) + et(yb, "#3987e5", num(u.bookS)) + et(Math.max(yc, yb) + 20, "#fff", `${num(u.capS / u.bookS, 2)}x P/BV`);
+  s += `<text class="ax" x="${L}" y="${H - 5}">${fDia(F[0].f)}</text><text class="ax" x="${W - R}" y="${H - 5}" text-anchor="end">${u.hoy ? "Hoy" : fDia(u.f)}</text>`;
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - svg.getBoundingClientRect().left - L) / (pw / (n - 1)))));
+    const r = F[i];
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    tip.innerHTML = `<span class="muted">${r.hoy ? "Hoy" : fDia(r.f)}</span> · P/BV <b>${num(r.capS / r.bookS, 2)}x</b>`
+      + `<br><span style="color:#ffb000">Market cap</span> US$ ${num(r.capS)} M<br><span style="color:#3987e5">Patrimonio</span> US$ ${num(r.bookS)} M`
+      + Object.keys(r.books).map(b => `<br><span class="muted">${b}</span> ${num(r.caps[b])} / ${num(r.books[b])} <span class="muted">(${num(r.caps[b] / r.books[b], 2)}x · ${r.qs[b][5]}T${r.qs[b].slice(2, 4)})</span>`).join("");
+    tip.hidden = false;
+    tip.style.top = `${T + 20}px`;
+    tip.style.left = Math.max(0, Math.min(W - tip.offsetWidth, x(i) + 14)) + "px";
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
+}
+
+document.querySelectorAll("#capRangos button").forEach(b => b.addEventListener("click", () => { CB.rango = +b.dataset.r; pintarCapBook(); }));
+
 function pintarBancos() {
   pintarTarjetasBancos();
   pintarTablero();
@@ -1424,6 +1611,7 @@ function bancosEnVivo() {
     bancosPendiente = false;
     pintarTarjetasBancos();
     pintarEP();
+    pintarCapBook();
     if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
   });
 }
@@ -1484,6 +1672,11 @@ async function cargarBancos() {
       preciosPublicos().catch(e => console.error("data912", e)),
     ]);
     pintarBancos();
+    // Market cap contra patrimonio: necesita el IPC ya cargado; baja la historia de precios aparte.
+    cargarCapBook().catch(e => {
+      console.error("market cap", e);
+      $("capChart").innerHTML = `<p class="err">No se pudo bajar la historia de precios: ${e.message}. Probá con Actualizar.</p>`;
+    });
     const vivo = store.get("cgr_token") ? "Precios en vivo desde CGR."
       : Object.keys(PX).length ? "Precios de BYMA vía data912, cada minuto. Con tu token de CGR (pestaña Mercado) van en vivo."
       : "No se pudo leer data912: se usan los precios de la planilla.";
