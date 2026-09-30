@@ -1569,6 +1569,14 @@ function dibujarCapBook(el) {
   }
   const linea = (k) => F.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[k]).toFixed(1)}`).join("");
   s += `<path d="${linea("bookS")}" fill="none" stroke="#3987e5" stroke-width="1.5"/><path d="${linea("capS")}" fill="none" stroke="#ffb000" stroke-width="1.5"/>`;
+  // Máximo y mínimo del market cap en el rango visible, en gris y chico para no competir con las líneas.
+  let iMax = 0, iMin = 0;
+  F.forEach((r, i) => { if (r.capS > F[iMax].capS) iMax = i; if (r.capS < F[iMin].capS) iMin = i; });
+  for (const [i, arriba, tx] of [[iMax, true, "máx"], [iMin, false, "mín"]]) {
+    const px = x(i), py = y(F[i].capS), ancla = px < L + 60 ? "start" : px > W - R - 60 ? "end" : "middle";
+    s += `<circle cx="${px}" cy="${py}" r="2.5" style="fill:var(--panel);stroke:var(--muted);stroke-width:1"/>`
+      + `<text x="${px}" y="${arriba ? py - 8 : py + 14}" text-anchor="${ancla}" style="fill:var(--muted);font:9px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${tx} ${num(F[i].capS)} · ${F[i].hoy ? "hoy" : fDia(F[i].f)}</text>`;
+  }
   const u = F.at(-1);
   let yc = y(u.capS), yb = y(u.bookS);
   if (Math.abs(yc - yb) < 28) { const m = (yc + yb) / 2, sg = u.capS >= u.bookS ? -1 : 1; yc = m + sg * 14; yb = m - sg * 14; }
