@@ -298,16 +298,16 @@
     <div id="legBody" hidden>
       <div class="headlines" id="legStrip"></div>
 
-      <div class="sec"><h2>Tablero por tramo · ley local (AL) contra ley Nueva York (GD)</h2></div>
+      <div class="sec"><h2>Tablero por tramo · ley Nueva York (GD) contra ley local (AL)</h2></div>
       <div class="card table-wrap"><table class="btable" id="legTable"></table></div>
-      <p class="hint">Precios en dólares MEP (especie D) en las dos patas, así AL y GD se comparan en la misma moneda de liquidación. Ratio = GD / AL: si sube, crece el castigo por ley local. Spread = TIR AL − TIR GD, en puntos básicos. z: desvíos contra las últimas 60 ruedas.</p>
+      <p class="hint">Precios en pesos (24hs). Ratio = GD / AL: si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos: es el castigo por ley local. z: desvíos contra las últimas 60 ruedas.</p>
 
       <div class="sec"><h2>Evolución</h2></div>
       <div class="legend" id="legLegend"></div>
       <div class="grid grid-feat">
         <article class="card mcard"><div class="mhead"><h3>Spread de TIR (pb)</h3><span class="src">TIR AL − TIR GD</span></div><div class="chart tall" id="legSpread"></div></article>
-        <article class="card mcard"><div class="mhead"><h3>Ratio GD / AL</h3><span class="src">Especie D</span></div><div class="chart tall" id="legRatio"></div></article>
-        <article class="card mcard"><div class="mhead"><h3>Volumen del ley local</h3><span class="src">% del volumen del par en pesos · media 20r</span></div><div class="chart tall" id="legVol"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Ratio GD / AL</h3><span class="src">En pesos</span></div><div class="chart tall" id="legRatio"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Volumen del GD</h3><span class="src">% del volumen del par en pesos · media 20r</span></div><div class="chart tall" id="legVol"></div></article>
         <article class="card mcard"><div class="mhead"><h3>Canje (CCL / MEP − 1)</h3><span class="src">AL30D / AL30C</span></div><div class="chart tall" id="legCanje"></div></article>
       </div>
       <p class="hint" id="legNota"></p>
@@ -444,7 +444,7 @@ function setStatus(kind, text) {
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
 // Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
 let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
-const LEG_SYMS = ["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b}D - 24hs`);
+const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs"];
 const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
@@ -1523,7 +1523,8 @@ setInterval(() => {
 //   ratio  = GD / AL          -> si sube, crece el castigo por ley local (el proyecto usa AL/GD; acá va invertido a pedido)
 //   spread = TIR AL − TIR GD  -> en pb, positivo en condiciones normales
 //   canje  = CCL / MEP − 1
-// Las dos patas se toman en especie D (MEP): misma moneda de liquidación, no hace falta netear el canje.
+// Precios en pesos (la especie más líquida de las dos patas). Para la TIR, los dos precios se pasan a
+// dólares con el mismo tipo de cambio: el MEP implícito del AL30 (AL30 / AL30D) de cada rueda.
 
 const LEG_PARES = [["29", "AL29", "GD29"], ["30", "AL30", "GD30"], ["35", "AL35", "GD35"], ["38", "AE38", "GD38"], ["41", "AL41", "GD41"]];
 // Paleta categórica validada (modo oscuro), en orden fijo: el tramo conserva su color siempre.
@@ -1577,32 +1578,34 @@ async function cargarLegislacion() {
   $("legEstado").textContent = "Bajando la historia de los bonos…";
   try {
     const bonos = LEG_PARES.flatMap(([, a, g]) => [a, g]);
-    // Especie D para precios y TIR; especie en pesos para el volumen (es donde operan las dos patas).
-    const pedidos = [...bonos.map(b => `${b}D`), ...bonos, "AL30C"];
+    const pedidos = [...bonos, "AL30D", "AL30C"];
     const res = await Promise.all(pedidos.map(t => getJSON(`https://data912.com/historical/bonds/${t}`, 30000)));
     const H = {};
     L.corregidos = 0;
     pedidos.forEach((t, i) => { const r = limpiar(res[i]); H[t] = r.m; L.corregidos += r.corregidos; });
 
+    // MEP implícito de cada rueda: AL30 en pesos sobre AL30 en dólares MEP.
+    const MEP = new Map([...H["AL30"]].filter(([f]) => H["AL30D"].has(f)).map(([f, x]) => [f, x.c / H["AL30D"].get(f).c]));
+
     for (const [tramo, a, g] of LEG_PARES) {
-      const A = H[`${a}D`], G = H[`${g}D`];
-      const fechas = [...A.keys()].filter(f => G.has(f)).sort();
+      const A = H[a], G = H[g];
+      const fechas = [...A.keys()].filter(f => G.has(f) && MEP.has(f)).sort();
       const serie = fechas.map(f => {
-        const pa = A.get(f).c, pg = G.get(f).c, ta = tir(pa, a, f), tg = tir(pg, g, f);
-        return { f, pa, pg, ratio: pg / pa, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null, va: A.get(f).v, vg: G.get(f).v };
+        const pa = A.get(f).c, pg = G.get(f).c, mep = MEP.get(f);
+        const ta = tir(pa / mep, a, f), tg = tir(pg / mep, g, f);
+        return { f, pa, pg, mep, ratio: pg / pa, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null, va: A.get(f).v, vg: G.get(f).v };
       });
-      // Participación del ley local en el volumen del par (especie en pesos), media móvil de 20 ruedas.
-      const VA = H[a], VG = H[g];
-      serie.forEach(p => { p.va = VA.get(p.f)?.v ?? 0; p.vg = VG.get(p.f)?.v ?? 0; });
+      // Participación del GD en el volumen del par (en pesos), media móvil de 20 ruedas.
       serie.forEach((p, i) => {
         const w = serie.slice(Math.max(0, i - VOL_VENTANA + 1), i + 1);
         const sa = w.reduce((s, x) => s + x.va, 0), sg = w.reduce((s, x) => s + x.vg, 0);
-        p.vol = sa + sg > 0 && w.length === VOL_VENTANA ? sa / (sa + sg) : null;
+        p.vol = sa + sg > 0 && w.length === VOL_VENTANA ? sg / (sa + sg) : null;
       });
       L.pares[tramo] = { tramo, a, g, serie };
     }
-    const MEP = H["AL30D"], CCL = H["AL30C"];
-    L.canje = [...MEP.keys()].filter(f => CCL.has(f)).sort().map(f => ({ f, v: MEP.get(f).c / CCL.get(f).c - 1 }));
+    // Canje = CCL / MEP − 1 = AL30D / AL30C − 1.
+    const D30 = H["AL30D"], C30 = H["AL30C"];
+    L.canje = [...D30.keys()].filter(f => C30.has(f)).sort().map(f => ({ f, v: D30.get(f).c / C30.get(f).c - 1 }));
 
     try { await preciosLeg(); } catch (e) { console.error("data912 bonos", e); }
     L.cargado = true;
@@ -1621,18 +1624,23 @@ async function cargarLegislacion() {
 // Precios en vivo sin token: panel de bonos de Data912 (se refresca cada minuto).
 async function preciosLeg() {
   const d = await getJSON("https://data912.com/live/arg_bonds");
-  for (const x of d) if (/D$/.test(x.symbol)) {
+  for (const x of d) {
     const p = x.c > 0 ? x.c : x.px_bid > 0 && x.px_ask > 0 ? (x.px_bid + x.px_ask) / 2 : null;
     if (p) L.vivo[x.symbol] = p;
   }
 }
 
-// Precio de hoy de un bono: CGR en vivo si hay token, si no Data912.
-function precioLeg(b) {
-  const p = state[`${b}D - 24hs`]?.LA?.price;
+// Precio de hoy de una especie (ej. "AL30" en pesos, "AL30D"): CGR en vivo si hay token, si no Data912.
+function precioLeg(sym) {
+  const p = state[`${sym} - 24hs`]?.LA?.price;
   if (p) return { p, fuente: "cgr" };
-  if (L.vivo[`${b}D`]) return { p: L.vivo[`${b}D`], fuente: "data912" };
+  if (L.vivo[sym]) return { p: L.vivo[sym], fuente: "data912" };
   return null;
+}
+// MEP de hoy: AL30 / AL30D con precios actuales; si falta alguno, el último de la historia.
+function mepHoy() {
+  const a = precioLeg("AL30"), d = precioLeg("AL30D");
+  return a && d ? a.p / d.p : L.pares["30"]?.serie.at(-1)?.mep;
 }
 
 // Fila de hoy de cada tramo (precio actual) y la anterior para las variaciones.
@@ -1640,14 +1648,15 @@ function legHoy(par) {
   const ult = par.serie.at(-1), h = hoy();
   const pa = precioLeg(par.a), pg = precioLeg(par.g);
   if (!pa || !pg) return { hoy: ult, ant: par.serie.at(-2), vivo: false };
-  const ta = tir(pa.p, par.a, h), tg = tir(pg.p, par.g, h);
-  const fila = { f: h, pa: pa.p, pg: pg.p, ratio: pg.p / pa.p, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null };
+  const mep = mepHoy();
+  const ta = tir(pa.p / mep, par.a, h), tg = tir(pg.p / mep, par.g, h);
+  const fila = { f: h, pa: pa.p, pg: pg.p, mep, ratio: pg.p / pa.p, ta, tg, spread: ta != null && tg != null ? (ta - tg) * 1e4 : null };
   const ant = ult.f < h ? ult : par.serie.at(-2);
   return { hoy: fila, ant, vivo: true, fuente: pa.fuente === "cgr" && pg.fuente === "cgr" ? "cgr" : "data912" };
 }
 
 function pintarLegTabla() {
-  const cols = ["Tramo", "AL (D)", "GD (D)", "Ratio GD/AL", "Δ día", "z 60r", "TIR AL", "TIR GD", "Spread pb", "Δ pb", "z 60r"];
+  const cols = ["Par", "GD ($)", "AL ($)", "Ratio GD/AL", "Δ día", "z 60r", "TIR GD", "TIR AL", "Spread pb", "Δ pb", "z 60r"];
   let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="3">Ratio</th><th colspan="5">TIR y spread</th></tr>
     <tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
   LEG_PARES.forEach(([tramo], i) => {
@@ -1660,10 +1669,10 @@ function pintarLegTabla() {
     const dr = ant ? x.ratio / ant.ratio - 1 : null;
     const ds = ant && esNum(ant.spread) && esNum(x.spread) ? x.spread - ant.spread : null;
     const zfmt = (z) => z == null ? "—" : `<span style="color:${Math.abs(z) >= 1.5 ? "var(--accent)" : "inherit"}">${signo(z)}${num(z, 1)}</span>`;
-    h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${par.a} / ${par.g}</td>
-      <td>${num(x.pa, 2)}</td><td>${num(x.pg, 2)}</td>
+    h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${par.g} / ${par.a}</td>
+      <td>${num(x.pg, 2)}</td><td>${num(x.pa, 2)}</td>
       <td><b>${num(x.ratio, 4)}</b></td><td>${dr == null ? "—" : pill(dr, pct(Math.abs(dr), 2), -1)}</td><td>${zfmt(zr)}</td>
-      <td>${pct(x.ta, 2)}</td><td>${pct(x.tg, 2)}</td>
+      <td>${pct(x.tg, 2)}</td><td>${pct(x.ta, 2)}</td>
       <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td><td>${zfmt(zs)}</td></tr>`;
   });
   $("legTable").innerHTML = h + "</tbody>";
@@ -1691,12 +1700,12 @@ function pintarLegGraficos() {
   const marks = ELECCIONES.filter(m => m.f >= desde);
   const series = (campo) => LEG_PARES.map(([t, a, g], i) => {
     const m = new Map((L.pares[t]?.serie || []).map(p => [p.f, p[campo]]));
-    return { name: `${a}/${g}`, color: LEG_COLORES[i], vals: xs.map(f => esNum(m.get(f)) ? m.get(f) : null) };
+    return { name: `${g}/${a}`, color: LEG_COLORES[i], vals: xs.map(f => esNum(m.get(f)) ? m.get(f) : null) };
   });
-  $("legLegend").innerHTML = LEG_PARES.map(([t, a, g], i) => `<span><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${a}/${g}</span>`).join("");
+  $("legLegend").innerHTML = LEG_PARES.map(([t, a, g], i) => `<span><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${g}/${a}</span>`).join("");
   chart($("legSpread"), [], { label: "Spread de TIR", multi: { xs, series: series("spread") }, h: 250, marks, fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) });
   chart($("legRatio"), [], { label: "Ratio GD/AL", multi: { xs, series: series("ratio") }, h: 250, marks, fmt: (v) => num(v, 4), fmtAxis: (v) => num(v, 2) });
-  chart($("legVol"), [], { label: "Volumen del ley local", multi: { xs, series: series("vol") }, h: 250, marks, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) });
+  chart($("legVol"), [], { label: "Volumen del GD", multi: { xs, series: series("vol") }, h: 250, marks, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) });
   const cj = L.canje.filter(p => p.f >= desde);
   chart($("legCanje"), [], { label: "Canje", multi: { xs: cj.map(p => p.f), series: [{ name: "Canje", color: "var(--accent)", vals: cj.map(p => p.v) }] }, h: 250, marks, fmt: (v) => pct(v, 2), fmtAxis: (v) => pct(v, 1) });
   document.querySelectorAll("#legRangos button").forEach(b => b.classList.toggle("on", +b.dataset.r === L.rango));
@@ -1711,7 +1720,7 @@ function pintarLegislacion() {
     : Object.keys(L.vivo).length ? "Precios de hoy vía Data912, cada minuto. Con tu token de CGR van en vivo." : "Sin precio de hoy: se muestra el último cierre.";
   $("legEstado").textContent = `Historia de Data912 hasta el ${ult ? fDia(ult) : "—"}. ${vivo}`;
   $("legNota").innerHTML = `TIR calculada con los flujos completos de cada bono (los mismos del proyecto spread_legislacion, validados contra CGR). `
-    + `Volumen: participación del ley local en el volumen del par en la especie en pesos, la más líquida para las dos patas; lo que importa es cómo cambia, no el nivel (el AL30 siempre concentra la mayor parte). `
+    + `Volumen: participación del GD en el volumen del par en pesos; lo que importa es cómo cambia, no el nivel (en el tramo 30 el AL concentra casi todo el volumen). `
     + `Líneas punteadas: elecciones del 7-sep (PBA) y del 26-oct de 2025. `
     + (L.corregidos ? `Se corrigieron ${L.corregidos} cierres de Data912 que caían fuera del rango del día (se usó el punto medio del rango).` : "");
 }
