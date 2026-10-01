@@ -1396,9 +1396,9 @@ function drawMulti(el, o) {
 // Cómo se llevó el libro a pesos de hoy, para las notas al pie.
 function textoIPC() {
   if (!B.ipcHoy) return "sin ajuste por inflación (no se pudo leer el IPC)";
-  const base = `reexpresado a pesos de hoy con el IPC de ${fMesL(B.ipcUlt.f)} (${B.ipcUlt.fuente})`;
+  const base = `reexpresado a pesos de hoy con el IPC de ${fMesL(B.ipcUlt.f)} (${B.ipcUlt.fuente}), tomado a mediados de ese mes`;
   if (!B.ipcHoy.est) return base;
-  return `${base} <span class="est">+ ${B.ipcHoy.faltan === 1 ? "un mes estimado" : `${B.ipcHoy.faltan} meses estimados`} con el REM (${pct(B.ipcHoy.pim, 1)} mensual)</span>, que se reemplaza solo cuando INDEC publica`;
+  return `${base} <span class="est">y llevado a hoy, día por día, con la inflación que espera el REM (${pct(B.ipcHoy.pim, 1)} mensual)</span>; cuando INDEC publica, el dato real reemplaza a la estimación`;
 }
 
 // ROE del trimestre / P/BV al cierre (de DASH), con el punto de hoy: ROE del último
@@ -1473,13 +1473,7 @@ async function cargarCapBook() {
   const IPC = new Map();
   if (ipcM) ipcM.forEach(p => IPC.set(p.f.slice(0, 7), p.v));
   else for (const [q, v] of Object.entries(B.ipc)) IPC.set(finTrimestre(q).slice(0, 7), v);
-  const meses = [...IPC.keys()].sort();
-  CB.ipcEn = (f) => {
-    const m = f.slice(0, 7);
-    if (IPC.has(m)) return IPC.get(m);
-    if (m > meses.at(-1)) return B.ipcHoy?.v ?? IPC.get(meses.at(-1));   // meses sin publicar: estimación REM
-    return IPC.get(meses.filter(x => x <= m).at(-1) ?? meses[0]);
-  };
+  CB.ipcEn = crearIPCDiario([...IPC], B.ipcHoy?.pim ?? null);   // día por día, sin saltos al cambiar de mes
 
   const fechas = [...CCL.keys()].filter(f => f >= "2024-01-01" && bs.every(b => P[b].has(f))).sort();
   const precioAl = (b, f) => { const d = fechas.filter(x => x <= f).at(-1); return d ? P[b].get(d) : null; };
@@ -1624,9 +1618,23 @@ function bancosEnVivo() {
   });
 }
 
-// IPC a hoy. Base: el último IPC mensual de INDEC (datos.gob.ar); si no responde, el último
-// trimestre de la tabla de IPC de la hoja INPUTS. Los meses que todavía no se publicaron se
-// estiman con la inflación que espera el REM (su mediana a 12 meses, llevada a mensual).
+// IPC a cualquier fecha. El IPC mensual es el promedio del mes, así que se lo ubica a mediados (día 15)
+// y se interpola día por día entre meses. Después del último mes publicado se proyecta, también día
+// por día, con la inflación mensual que espera el REM. Así no hay saltos al cambiar de mes.
+function crearIPCDiario(meses, pim) {
+  const pts = meses.map(([m, v]) => [Date.parse(`${m}-15`), v]).sort((a, b) => a[0] - b[0]);
+  const MES = 30.4375 * 864e5;
+  return (f) => {
+    const t = Date.parse(f), [t0, v0] = pts[0], [tn, vn] = pts.at(-1);
+    if (t >= tn) return pim != null ? vn * (1 + pim) ** ((t - tn) / MES) : vn;
+    if (t <= t0) return v0;
+    const k = pts.findIndex(p => p[0] > t), [ta, va] = pts[k - 1], [tb, vb] = pts[k];
+    return va * (vb / va) ** ((t - ta) / (tb - ta));
+  };
+}
+
+// IPC de hoy. Base: la serie mensual de INDEC (datos.gob.ar); si no responde, la tabla trimestral
+// de la hoja INPUTS. Lo que falta publicar se estima con el REM (mediana a 12 meses, llevada a mensual).
 async function cargarIPC() {
   const [indec, rem] = await Promise.allSettled([
     datosGob({ n: "148.3_INIVELNAL_DICI_M_26" }, haceDias(240)),
@@ -1640,13 +1648,14 @@ async function cargarIPC() {
     const mes = String(+q.slice(5) * 3).padStart(2, "0");
     B.ipcUlt = { f: `${q.slice(0, 4)}-${mes}-01`, v: B.ipc[q], fuente: "hoja INPUTS; INDEC no respondió" };
   }
-  const h = hoy(), f = B.ipcUlt.f;
-  const faltan = (+h.slice(0, 4) * 12 + +h.slice(5, 7)) - (+f.slice(0, 4) * 12 + +f.slice(5, 7));
   const r = rem.status === "fulfilled" ? rem.value : [];
   const pim = r.length ? (1 + r.at(-1).v / 100) ** (1 / 12) - 1 : null;
-  B.ipcHoy = faltan > 0 && pim != null
-    ? { v: B.ipcUlt.v * (1 + pim) ** faltan, est: true, faltan, pim }
-    : { v: B.ipcUlt.v, est: false };
+  const meses = indec.status === "fulfilled" && indec.value.n.length
+    ? indec.value.n.map(p => [p.f.slice(0, 7), p.v])
+    : Object.entries(B.ipc).map(([q, v]) => [finTrimestre(q).slice(0, 7), v]);
+  B.ipcFecha = crearIPCDiario(meses, pim);
+  const est = Date.parse(hoy()) > Date.parse(`${B.ipcUlt.f.slice(0, 7)}-15`) && pim != null;
+  B.ipcHoy = { v: B.ipcFecha(hoy()), est, pim };
 }
 
 async function cargarBancos() {
