@@ -138,7 +138,8 @@
   .chart .pt { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
   .chart .ml { fill: none; stroke-width: 1.5; stroke-linejoin: round; }
   .chart .md { stroke: var(--panel); stroke-width: 2; }
-  .tip { position: absolute; top: 0; pointer-events: none; background: #000; color: var(--text); border: 1px solid var(--accent); padding: 5px 8px; font: 11px/1.5 var(--mono); white-space: nowrap; z-index: 2; }
+  .tip { position: absolute; top: 0; pointer-events: none; background: #000; color: var(--text); border: 1px solid var(--accent); padding: 5px 8px; font: 11px/1.5 var(--mono); white-space: nowrap; z-index: 2; max-width: 100%; }
+  .tip.angosto { white-space: normal; }
   .tip .muted { color: var(--muted); }
 
   /* ---------- Bancos ---------- */
@@ -743,14 +744,23 @@ function drawChart(el, pts, o) {
     for (const r of refs) if (r.vals[i] != null) html += `<br><span class="muted">${r.label}</span> ${fv(r.vals[i])}`;
     tip.innerHTML = html;
     tip.hidden = false;
-    const tw = tip.offsetWidth;
-    tip.style.left = Math.max(0, Math.min(W - tw, cx - tw / 2)) + "px";
+    ubicarTip(tip, cx, W);
   };
   el.onpointerleave = () => {
     xh.setAttribute("visibility", "hidden");
     if (pt) pt.setAttribute("visibility", "hidden");
     tip.hidden = true;
   };
+}
+
+// Pone el recuadro al costado del cursor (a la derecha, o a la izquierda si no entra), sin tapar el
+// punto que se está mirando y sin salirse nunca del gráfico. Si es más ancho que el gráfico, baja de línea.
+function ubicarTip(tip, cx, W) {
+  tip.classList.remove("angosto");
+  if (tip.offsetWidth > W) tip.classList.add("angosto");
+  const tw = tip.offsetWidth, gap = 12;
+  let left = cx + gap + tw <= W ? cx + gap : cx - gap - tw;
+  tip.style.left = Math.max(0, Math.min(W - tw, left)) + "px";
 }
 
 let resizeTimer = null;
@@ -1394,10 +1404,9 @@ function drawMulti(el, o) {
     const i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (pw / Math.max(1, n - 1)))));
     xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
     const filas = series.map(se => [se, se.vals[i]]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
-    tip.innerHTML = `<span class="muted">${xs[i]}</span>` + filas.map(([se, v]) => `<br><span class="swatch" style="--c:${se.color}"></span>${se.name} <b>${o.fmt(v)}</b>`).join("");
+    tip.innerHTML = `<span class="muted">${fq(xs[i])}</span>` + filas.map(([se, v]) => `<br><span class="swatch" style="--c:${se.color}"></span>${se.name} <b>${o.fmt(v)}</b>`).join("");
     tip.hidden = false;
-    const tw = tip.offsetWidth;
-    tip.style.left = Math.max(0, Math.min(W - tw, x(i) - tw / 2)) + "px";
+    ubicarTip(tip, x(i), W);
   };
   el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
@@ -1599,7 +1608,7 @@ function dibujarCapBook(el) {
       + Object.keys(r.books).map(b => `<br><span class="muted">${b}</span> ${num(r.caps[b])} / ${num(r.books[b])} <span class="muted">(${num(r.caps[b] / r.books[b], 2)}x · ${r.qs[b][5]}T${r.qs[b].slice(2, 4)})</span>`).join("");
     tip.hidden = false;
     tip.style.top = `${T + 20}px`;
-    tip.style.left = Math.max(0, Math.min(W - tip.offsetWidth, x(i) + 14)) + "px";
+    ubicarTip(tip, x(i), W);
   };
   el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
