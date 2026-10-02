@@ -698,7 +698,19 @@ function niceTicks(lo, hi, n = 3) {
 
 function chart(el, pts, o) {
   charts.set(el, [pts, o]);
+  dibujar(el, pts, o);
+}
+
+// Dibuja un gráfico y conserva el recuadro del mouse. Los gráficos se redibujan con cada precio que
+// llega (varias veces por segundo con el feed en vivo); sin esto, el recuadro aparecía y se borraba
+// enseguida. Se recuerda dónde está el mouse y, después de redibujar, se vuelve a mostrar ahí.
+function dibujar(el, pts, o) {
   o.draw ? o.draw(el) : o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
+  const mover = el.onpointermove, salir = el.onpointerleave;
+  if (!mover) return;
+  el.onpointermove = (e) => { el._mouse = { clientX: e.clientX, clientY: e.clientY }; mover(e); };
+  el.onpointerleave = (e) => { el._mouse = null; salir?.(e); };
+  if (el._mouse) mover(el._mouse);
 }
 
 function drawChart(el, pts, o) {
@@ -798,7 +810,7 @@ window.addEventListener("resize", () => {
 function redibujar() {
   for (const [el, [pts, o]] of charts) {
     if (!el.isConnected) { charts.delete(el); continue; }   // gráficos reemplazados al recargar
-    o.draw ? o.draw(el) : o.multi ? drawMulti(el, o) : drawChart(el, pts, o);
+    dibujar(el, pts, o);
   }
 }
 
