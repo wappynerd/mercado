@@ -1,0 +1,34 @@
+name: Actualizar ITCRM
+
+# Baja el ITCRM diario del BCRA y lo guarda en data/itcrm.json.
+# Corre de lunes a viernes a las 21:30 de Buenos Aires (00:30 UTC del día siguiente),
+# después de que el BCRA publica, y también se puede lanzar a mano.
+on:
+  schedule:
+    - cron: "30 0 * * 2-6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  itcrm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openpyxl
+      - run: python scripts/itcrm.py
+      - name: Guardar si cambió
+        run: |
+          if git diff --quiet -- data/itcrm.json; then
+            echo "Sin cambios."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/itcrm.json
+            git commit -m "ITCRM al $(date -u +%Y-%m-%d)"
+            git push
+          fi

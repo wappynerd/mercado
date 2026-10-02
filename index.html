@@ -251,6 +251,14 @@
     </div>
     <div class="headlines" id="titulares"></div>
     <div id="macroGrid"></div>
+
+    <div class="sec"><h2>Riesgo país y tipo de cambio real</h2></div>
+    <div class="headlines" id="primaKpis" style="margin-top:0"></div>
+    <article class="card mcard" style="margin-top:8px">
+      <div class="mhead"><h3>Riesgo país contra ITCRM</h3><span class="legend" id="primaLegend" style="margin:0"></span></div>
+      <div class="chart" id="primaChart" style="height:420px"><p class="hint">Cargando…</p></div>
+    </article>
+    <p class="hint" id="primaNota"></p>
   </div>
 
   <!-- ============================ BANCOS ============================= -->
@@ -926,6 +934,102 @@ function titulares() {
   $("titulares").innerHTML = t.map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 }
 
+/* ---------- Riesgo país contra tipo de cambio real (ITCRM) ---------- */
+//
+// La idea: cuando baja el riesgo país entran dólares y el peso se aprecia en términos reales (baja el
+// ITCRM). Contra la relación histórica se ve si el tipo de cambio real de hoy está más apreciado o más
+// depreciado de lo que sugiere el riesgo país: esa diferencia es la prima. La relación cambia con el
+// régimen cambiario, así que se estima solo con el régimen vigente.
+const REGIMENES = [
+  { desde: "2015-12-17", nombre: "2016–19 · flotación", c: "#199e70" },
+  { desde: "2019-09-01", nombre: "2019–23 · cepo", c: "#56606e" },
+  { desde: "2023-12-13", nombre: "2024–abr 25 · crawling", c: "#d55181" },
+  { desde: "2025-04-14", nombre: "Desde abr 25 · bandas", c: "#3987e5" },
+];
+const PR = { pts: [], fit: null };
+
+async function cargarPrima() {
+  const [it, rp] = await Promise.all([
+    getJSON("data/itcrm.json"),
+    getJSON("https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais", 30000),
+  ]);
+  const R = new Map(rp.filter(x => x.valor > 0).map(x => [x.fecha, x.valor]));
+  for (const x of M.riesgo || []) R.set(x.f, x.v);   // lo más reciente, de ámbito
+  PR.hasta = it.hasta;
+  PR.pts = it.serie.filter(([f]) => R.has(f)).map(([f, v]) => ({ f, rp: R.get(f), it: v, g: REGIMENES.findLastIndex(r => r.desde <= f) }));
+
+  // Relación del régimen vigente: ln(ITCRM) = a + b · ln(riesgo país), por mínimos cuadrados.
+  const act = PR.pts.filter(x => x.g === REGIMENES.length - 1);
+  const X = act.map(x => Math.log(x.rp)), Y = act.map(x => Math.log(x.it)), n = act.length;
+  const mx = X.reduce((a, b) => a + b, 0) / n, my = Y.reduce((a, b) => a + b, 0) / n;
+  const b = X.reduce((a, x, i) => a + (x - mx) * (Y[i] - my), 0) / X.reduce((a, x) => a + (x - mx) ** 2, 0), a = my - b * mx;
+  const r2 = 1 - Y.reduce((s, y, i) => s + (y - (a + b * X[i])) ** 2, 0) / Y.reduce((s, y) => s + (y - my) ** 2, 0);
+  PR.fit = { a, b, r2, n, min: Math.min(...act.map(x => x.rp)), max: Math.max(...act.map(x => x.rp)), est: (v) => Math.exp(a + b * Math.log(v)) };
+  pintarPrima();
+}
+
+function pintarPrima() {
+  if (!PR.pts.length) return;
+  const u = PR.pts.at(-1), est = PR.fit.est(u.rp), desv = u.it / est - 1, reg = REGIMENES.at(-1).nombre.toLowerCase();
+  $("primaKpis").innerHTML = [
+    ["Hoy", `Riesgo país <span class="num">${num(u.rp, 0)} pb</span> e ITCRM <span class="num">${num(u.it, 1)}</span> (al ${fDia(u.f)}).`],
+    ["Lo que sugiere el riesgo país", `Con ${num(u.rp, 0)} pb, la relación del régimen actual da un ITCRM de <span class="num">${num(est, 1)}</span>.`],
+    ["Prima", `El peso está <span class="num">${pct(Math.abs(desv), 1)}</span> más ${desv < 0 ? "apreciado" : "depreciado"} de lo que sugiere su riesgo país.`],
+  ].map(([k, t]) => `<div class="headline"><div class="k">${k}</div><p>${t}</p></div>`).join("");
+  $("primaLegend").innerHTML = REGIMENES.map(r => `<span><span class="swatch" style="--c:${r.c}"></span>${r.nombre}</span>`).join("");
+  chart($("primaChart"), [], { draw: dibujarPrima });
+  $("primaNota").innerHTML = `Cada punto es una semana. ITCRM: índice de tipo de cambio real multilateral del BCRA (17-12-2015 = 100); más bajo es un peso más caro. `
+    + `La línea punteada es la relación entre las dos variables estimada solo con el régimen vigente (${reg}, ${num(PR.fit.n, 0)} ruedas, R² ${num(PR.fit.r2, 2)}): explica una parte moderada de los movimientos, así que el desvío es una referencia, no una señal precisa. `
+    + `La relación cambia con cada régimen cambiario (se ve en cómo se separan los colores), por eso no se usa toda la historia junta. `
+    + `El ITCRM se calcula con el dólar oficial: con brecha, parte de la presión cambiaria no aparece acá.`;
+}
+
+function dibujarPrima(el) {
+  if (!PR.pts.length || !el.clientWidth) return;
+  const W = el.clientWidth, H = 420, L_ = 50, R = 20, T = 14, B_ = 36, pw = W - L_ - R, ph = H - T - B_;
+  // Un punto por semana (más el último), dibujando el régimen vigente arriba de los demás.
+  const P = PR.pts.filter((x, i) => i % 5 === 0 || i === PR.pts.length - 1).sort((a, b) => a.g - b.g);
+  const lx = (v) => Math.log(v), xs = P.map(x => x.rp), ys = P.map(x => x.it);
+  const x0 = lx(Math.min(...xs) * 0.95), x1 = lx(Math.max(...xs) * 1.05);
+  const yt = niceTicks(Math.min(...ys) - 3, Math.max(...ys) + 3, 5);
+  const x = (v) => L_ + (lx(v) - x0) / (x1 - x0) * pw, y = (v) => T + ph - (v - yt[0]) / (yt.at(-1) - yt[0]) * ph;
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Riesgo país contra ITCRM">`;
+  for (const t of yt) s += `<line class="gl" x1="${L_}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L_ - 6}" y="${y(t) + 3}" text-anchor="end">${num(t, 0)}</text>`;
+  for (const t of [300, 400, 600, 800, 1200, 1600, 2400, 3200, 4500]) {
+    if (lx(t) < x0 || lx(t) > x1) continue;
+    s += `<line class="gl" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T + ph}"/><text class="ax" x="${x(t)}" y="${H - 20}" text-anchor="middle">${num(t, 0)}</text>`;
+  }
+  s += `<text class="ax" x="${L_ + pw / 2}" y="${H - 5}" text-anchor="middle">riesgo país (pb, escala logarítmica)</text>`
+    + `<text class="ax" x="${L_}" y="${T - 3}">ITCRM</text>`;
+  for (const q of P) s += `<circle cx="${x(q.rp).toFixed(1)}" cy="${y(q.it).toFixed(1)}" r="${q.g === REGIMENES.length - 1 ? 2.8 : 2.2}" fill="${REGIMENES[q.g].c}" opacity="${q.g === REGIMENES.length - 1 ? 0.9 : 0.55}"/>`;
+  // Relación del régimen vigente
+  const f = PR.fit, paso = (Math.log(f.max) - Math.log(f.min)) / 40;
+  let d = "";
+  for (let k = 0; k <= 40; k++) { const v = Math.exp(Math.log(f.min) + k * paso); d += `${k ? "L" : "M"}${x(v).toFixed(1)},${y(f.est(v)).toFixed(1)}`; }
+  s += `<path d="${d}" fill="none" stroke="${REGIMENES.at(-1).c}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  // Hoy: el punto, y la distancia a la relación (la prima)
+  const u = PR.pts.at(-1), est = f.est(u.rp), desv = u.it / est - 1;
+  const txt = (px, py, t, c, anc = "start") => `<text x="${px}" y="${py}" text-anchor="${anc}" style="fill:${c};font:600 11px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:4px">${t}</text>`;
+  s += `<line x1="${x(u.rp)}" x2="${x(u.rp)}" y1="${y(u.it)}" y2="${y(est)}" stroke="var(--accent)" stroke-width="1.5"/>`
+    + `<circle cx="${x(u.rp)}" cy="${y(u.it)}" r="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>`
+    + txt(x(u.rp) + 11, y(u.it) + (desv < 0 ? 14 : -6), `Hoy · ${signo(desv)}${num(desv * 100, 1)}%`, "var(--accent)");
+  s += `</svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  const pos = P.map(q => ({ q, cx: x(q.rp), cy: y(q.it) }));
+  el.onpointermove = (e) => {
+    const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const h = pos.reduce((a, b) => (b.cx - mx) ** 2 + (b.cy - my) ** 2 < (a.cx - mx) ** 2 + (a.cy - my) ** 2 ? b : a);
+    tip.innerHTML = `<span class="swatch" style="--c:${REGIMENES[h.q.g].c}"></span><span class="muted">${fDia(h.q.f)}</span>`
+      + `<br><span class="muted">Riesgo país</span> <b>${num(h.q.rp, 0)} pb</b><br><span class="muted">ITCRM</span> <b>${num(h.q.it, 1)}</b>`;
+    tip.hidden = false;
+    tip.style.top = Math.max(0, Math.min(H - tip.offsetHeight, h.cy - tip.offsetHeight / 2)) + "px";
+    ubicarTip(tip, h.cx, W);
+  };
+  el.onpointerleave = () => { tip.hidden = true; };
+}
+
 /* ---------- Carga de todo el tablero ---------- */
 
 async function cargarMacro() {
@@ -1132,6 +1236,10 @@ async function cargarMacro() {
   titulares();
   ultimaCompleta = ultimaRapida = new Date();
   estadoMacro();
+  cargarPrima().catch(e => {
+    console.error("prima", e);
+    $("primaChart").innerHTML = `<p class="err">No se pudo cargar: ${e.message}</p>`;
+  });
 }
 
 // Riesgo país: ámbito lo mueve durante la rueda, por eso entra en el refresco rápido.
