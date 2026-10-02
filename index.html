@@ -1781,13 +1781,47 @@ function muestraIntra(b, precio, vol, fuente, cierreAnt) {
 
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
+// Velas de 15 minutos de CGR que baja la tarea de GitHub (data/intradia.json): cubren lo que pasó antes
+// de abrir la página. El parámetro t evita que la red de GitHub devuelva una copia vieja.
+let IR = null;
+async function cargarIntraRepo() {
+  try {
+    const d = await getJSON(`data/intradia.json?t=${Math.floor(Date.now() / 120000)}`);
+    IR = d.fecha === ahoraBA().fecha ? d : null;
+  } catch { IR = null; }
+}
+
+// Intradía de un banco en velas de 15 minutos: las de CGR donde ya están publicadas y, para los
+// últimos minutos que todavía no llegaron, las armadas en el navegador (agrupando las de 5).
+const INTRA_VISTA = 15;
+function velasIntra(b) {
+  const hoyBA = ahoraBA().fecha;
+  const repo = IR?.b?.[b], propio = IN.fecha === hoyBA ? IN.b?.[b] : null;
+  const V = (repo?.velas || []).map(v => ({ ...v, cgr: true }));
+  const ult = V.length ? V.at(-1).t : -1;
+  const grupos = new Map();
+  for (const v of propio?.velas || []) {
+    const t = Math.floor(v.t / INTRA_VISTA) * INTRA_VISTA;
+    if (t <= ult) continue;
+    const g = grupos.get(t);
+    if (!g) grupos.set(t, { t, o: v.o, h: v.h, l: v.l, c: v.c, v: v.v });
+    else { g.h = Math.max(g.h, v.h); g.l = Math.min(g.l, v.l); g.c = v.c; g.v += v.v; }
+  }
+  // La última vela de CGR puede estar todavía abierta: el precio de cierre se pisa con el último propio.
+  const ultimoPropio = propio?.velas.at(-1);
+  if (V.length && ultimoPropio && Math.floor(ultimoPropio.t / INTRA_VISTA) * INTRA_VISTA === ult) {
+    const u = V.at(-1); u.c = ultimoPropio.c; u.h = Math.max(u.h, u.c); u.l = Math.min(u.l, u.c);
+  }
+  return { V: [...V, ...[...grupos.values()].sort((a, c) => a.t - c.t)], cl: repo?.cl ?? propio?.cl ?? null };
+}
+
 function dibujarIntra(el, b) {
-  const s = IN.fecha === ahoraBA().fecha ? IN.b?.[b] : null;
+  const s = velasIntra(b);
   if (!el.clientWidth) return;
-  if (!s?.velas.length) { el.innerHTML = `<p class="hint" style="margin:0;padding-top:56px;text-align:center">Sin operaciones registradas hoy</p>`; return; }
-  const V = s.velas, W = el.clientWidth, H = 170, L_ = 44, R = 6, T = 8, PH = 100, VT = 122, VH = 28;
-  const pw = W - L_ - R, n = (INTRA_HASTA - INTRA_DESDE) / INTRA_PASO, bw = pw / n;
-  const x = (t) => L_ + (t - INTRA_DESDE) / INTRA_PASO * bw + bw / 2;
+  if (!s.V.length) { el.innerHTML = `<p class="hint" style="margin:0;padding-top:56px;text-align:center">Sin operaciones registradas hoy</p>`; return; }
+  const V = s.V, W = el.clientWidth, H = 170, L_ = 44, R = 6, T = 8, PH = 100, VT = 122, VH = 28;
+  const pw = W - L_ - R, n = (INTRA_HASTA - INTRA_DESDE) / INTRA_VISTA, bw = pw / n;
+  const x = (t) => L_ + (t - INTRA_DESDE) / INTRA_VISTA * bw + bw / 2;
   const precios = V.flatMap(v => [v.h, v.l]).concat(esNum(s.cl) ? [s.cl] : []);
   let lo = Math.min(...precios), hi = Math.max(...precios);
   if (lo === hi) { lo *= 0.999; hi *= 1.001; }
@@ -1830,15 +1864,15 @@ function pintarIntra() {
   const cont = $("bankIntra");
   if (cont.children.length !== B.bancos.length) {
     cont.innerHTML = B.bancos.map(b => `<article class="card mcard" style="--c:${colorBanco(b)}">
-      <div class="mhead"><h3>${b} · intradía</h3><span class="src">5 min · vol. $</span></div>
+      <div class="mhead"><h3>${b} · intradía</h3><span class="src">15 min · vol. $</span></div>
       <div class="chart" data-b="${b}" style="height:170px"></div></article>`).join("");
   }
   for (const el of cont.querySelectorAll(".chart")) chart(el, [], { draw: (e) => dibujarIntra(e, el.dataset.b) });
-  const hoyBA = ahoraBA(), hay = IN.fecha === hoyBA.fecha && Object.values(IN.b || {}).some(x => x.velas.length);
   const vivo = B.bancos.some(b => state[`${b} - 24hs`]?.LA?.price);
-  $("intraNota").innerHTML = (hay ? `Intradía de hoy, registrado desde las ${hhmm(Math.max(INTRA_DESDE, IN.desde ?? INTRA_DESDE))}. ` : `El intradía se arma con la rueda abierta (10:30 a 17:00). `)
-    + `Se va construyendo en tu navegador mientras tenés la página abierta: ${vivo ? "con cada operación del feed de CGR" : "con una lectura por minuto de Data912 (con tu token de CGR entra cada operación)"}. `
-    + `No incluye lo que pasó antes de abrirla. Línea punteada: cierre anterior.`;
+  const ult = IR ? Math.max(...Object.values(IR.b).map(x => x.velas.at(-1)?.t ?? 0)) : null;
+  $("intraNota").innerHTML = (IR ? `Velas de 15 minutos de CGR hasta las ${hhmm(ult)} (se actualizan solas cada 15 minutos durante la rueda). ` : `Todavía no hay velas de CGR de hoy: aparecen con la rueda abierta (10:30 a 17:00). `)
+    + `Los últimos minutos se completan en tu navegador ${vivo ? "con cada operación del feed de CGR" : "con una lectura por minuto de Data912 (con tu token de CGR entra cada operación)"}. `
+    + `Línea punteada: cierre anterior. Volumen en pesos.`;
 }
 
 function pintarBancos() {
@@ -1927,6 +1961,7 @@ async function cargarBancos() {
     $("bancosError").hidden = true;
     $("bancosBody").hidden = false;
     pintarBancos();   // ya con la planilla; IPC y precios se completan cuando lleguen
+    cargarIntraRepo().then(pintarIntra);
     const leida = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos.`;
     $("bancosEstado").textContent = `${leida} Buscando precios e IPC…`;
 
@@ -1958,6 +1993,9 @@ async function cargarBancos() {
 }
 
 $("bancosRefresh").addEventListener("click", cargarBancos);
+setInterval(() => {
+  if (B.cargado && tab === "bancos" && document.visibilityState === "visible") cargarIntraRepo().then(pintarIntra);
+}, 5 * 60 * 1000);
 
 // Sin feed de CGR, los precios de los bancos se refrescan cada minuto desde data912.
 setInterval(async () => {

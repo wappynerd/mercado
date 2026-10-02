@@ -1,0 +1,40 @@
+name: Intradía de bancos
+
+# Baja las velas de 15 minutos de hoy (CGR) y las guarda en data/intradia.json.
+# Corre cada 15 minutos durante la rueda: 10:30 a 17:15 de Buenos Aires = 13:30 a 20:15 UTC,
+# de lunes a viernes. GitHub puede demorar unos minutos cada corrida.
+on:
+  schedule:
+    - cron: "*/15 13-20 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: intradia
+  cancel-in-progress: true
+
+jobs:
+  intradia:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/intradia.py
+        env:
+          MDH_TOKEN: ${{ secrets.MDH_TOKEN }}
+      - name: Guardar si cambió
+        run: |
+          git add data/intradia.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Intradía $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase
+            git push
+          fi
