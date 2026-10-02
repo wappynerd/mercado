@@ -276,6 +276,8 @@
     <div class="card err-card" id="bancosError" hidden></div>
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
+      <div class="bank-cards" id="bankIntra" style="margin-top:8px"></div>
+      <p class="hint" id="intraNota"></p>
 
       <div class="sec"><h2>Market cap contra patrimonio</h2></div>
       <div class="headlines" id="capKpis" style="margin-top:0"></div>
@@ -525,7 +527,11 @@ function recibir(sym, md, reemplazar) {
   state[sym] = reemplazar ? md : { ...(prev || {}), ...md };
   if (wanted.includes(sym)) paintRow(sym, state[sym], prev);
   if (FX_SYMS.includes(sym)) fxEnVivo();
-  if (BANK_SYMS.includes(sym)) bancosEnVivo();
+  if (BANK_SYMS.includes(sym)) {
+    const m = state[sym];
+    muestraIntra(sym.split(" - ")[0], m.LA?.price, m.EV, "cgr", m.CL?.price);
+    bancosEnVivo();
+  }
   if (LEG_SYMS.includes(sym)) legEnVivo();
 }
 
@@ -1371,7 +1377,12 @@ async function preciosPublicos() {
   const d = await getJSON("https://data912.com/live/arg_stocks");
   for (const x of d) {
     const p = x.c > 0 ? x.c : x.px_bid > 0 ? x.px_bid : null;
-    if (p) PX[x.symbol] = { p, var1: esNum(x.pct_change) ? x.pct_change / 100 : null };
+    if (p) PX[x.symbol] = { p, var1: esNum(x.pct_change) ? x.pct_change / 100 : null, v: x.v };
+  }
+  // Sin feed de CGR, el intradía se arma con estas lecturas (una por minuto).
+  for (const b of B.bancos) {
+    if (state[`${b} - 24hs`]?.LA?.price || !PX[b]) continue;
+    muestraIntra(b, PX[b].p, PX[b].v, "data912", PX[b].var1 != null ? PX[b].p / (1 + PX[b].var1) : null);
   }
 }
 
@@ -1731,8 +1742,108 @@ function dibujarCapBook(el) {
 
 document.querySelectorAll("#capRangos button").forEach(b => b.addEventListener("click", () => { CB.rango = +b.dataset.r; pintarCapBook(); }));
 
+/* ---------- Intradía de los bancos ---------- */
+//
+// No hay una fuente de velas intradía que el navegador pueda leer (CGR las tiene, pero no acepta pedidos
+// desde otra página), así que se arman acá con lo que va llegando: cada operación del feed de CGR o, sin
+// token, la lectura de Data912 de cada minuto. Se agrupan en velas de 5 minutos y se guardan en el
+// navegador mientras dura el día, para no perderlas al recargar.
+const INTRA_DESDE = 10 * 60 + 30, INTRA_HASTA = 17 * 60, INTRA_PASO = 5;
+const IN = (() => { try { return JSON.parse(store.get("intradia")) || {}; } catch { return {}; } })();
+
+function ahoraBA() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { fecha: `${p.year}-${p.month}-${p.day}`, min: (+p.hour % 24) * 60 + +p.minute };
+}
+
+let intraGuardar = null;
+// vol: volumen acumulado del día según la fuente (CGR en pesos; Data912 en nominales, se pasa a pesos).
+function muestraIntra(b, precio, vol, fuente, cierreAnt) {
+  if (!esNum(precio) || precio <= 0) return;
+  const { fecha, min } = ahoraBA();
+  if (min < INTRA_DESDE || min > INTRA_HASTA + 5) return;
+  if (IN.fecha !== fecha) { IN.fecha = fecha; IN.b = {}; IN.desde = min; }
+  const s = IN.b[b] ??= { velas: [], vol: {}, cl: null };
+  if (esNum(cierreAnt)) s.cl = cierreAnt;
+  const t = Math.min(INTRA_HASTA - INTRA_PASO, Math.floor(min / INTRA_PASO) * INTRA_PASO);
+  let v = s.velas.at(-1);
+  if (!v || v.t !== t) { v = { t, o: precio, h: precio, l: precio, c: precio, v: 0 }; s.velas.push(v); }
+  v.h = Math.max(v.h, precio); v.l = Math.min(v.l, precio); v.c = precio;
+  if (esNum(vol)) {
+    const ant = s.vol[fuente];
+    if (esNum(ant) && vol > ant) v.v += (vol - ant) * (fuente === "data912" ? precio : 1);
+    s.vol[fuente] = vol;
+  }
+  if (!intraGuardar) intraGuardar = setTimeout(() => { intraGuardar = null; store.set("intradia", JSON.stringify(IN)); }, 15000);
+}
+
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+function dibujarIntra(el, b) {
+  const s = IN.fecha === ahoraBA().fecha ? IN.b?.[b] : null;
+  if (!el.clientWidth) return;
+  if (!s?.velas.length) { el.innerHTML = `<p class="hint" style="margin:0;padding-top:56px;text-align:center">Sin operaciones registradas hoy</p>`; return; }
+  const V = s.velas, W = el.clientWidth, H = 170, L_ = 44, R = 6, T = 8, PH = 100, VT = 122, VH = 28;
+  const pw = W - L_ - R, n = (INTRA_HASTA - INTRA_DESDE) / INTRA_PASO, bw = pw / n;
+  const x = (t) => L_ + (t - INTRA_DESDE) / INTRA_PASO * bw + bw / 2;
+  const precios = V.flatMap(v => [v.h, v.l]).concat(esNum(s.cl) ? [s.cl] : []);
+  let lo = Math.min(...precios), hi = Math.max(...precios);
+  if (lo === hi) { lo *= 0.999; hi *= 1.001; }
+  const tk = niceTicks(lo, hi, 3); lo = Math.min(lo, tk[0]); hi = Math.max(hi, tk.at(-1));
+  const y = (p) => T + PH - (p - lo) / (hi - lo) * PH;
+  const vmax = Math.max(...V.map(v => v.v), 1);
+  let g = `<svg width="${W}" height="${H}" role="img" aria-label="Intradía de ${b}">`;
+  for (const t of tk) g += `<line class="gl" x1="${L_}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L_ - 5}" y="${y(t) + 3}" text-anchor="end">${num(t, 0)}</text>`;
+  if (esNum(s.cl)) g += `<line class="ref" x1="${L_}" x2="${W - R}" y1="${y(s.cl)}" y2="${y(s.cl)}"/>`;
+  // Volumen de cada vela, abajo
+  for (const v of V) {
+    const h = v.v / vmax * VH;
+    if (h > 0) g += `<rect x="${(x(v.t) - Math.max(1, bw - 1) / 2).toFixed(1)}" y="${(VT + VH - h).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" style="fill:var(--muted);opacity:.55"/>`;
+  }
+  // Precio: línea por los cierres de cada vela, con el rango (mínimo–máximo) como sombra
+  g += V.map(v => `<line x1="${x(v.t)}" x2="${x(v.t)}" y1="${y(v.h)}" y2="${y(v.l)}" style="stroke:var(--c);opacity:.35"/>`).join("");
+  g += `<path class="ml" style="stroke:var(--c)" d="${V.map((v, i) => `${i ? "L" : "M"}${x(v.t).toFixed(1)},${y(v.c).toFixed(1)}`).join("")}"/>`;
+  const u = V.at(-1);
+  g += `<circle class="md" r="3.5" cx="${x(u.t)}" cy="${y(u.c)}" style="fill:var(--c)"/>`;
+  for (const t of [INTRA_DESDE, 12 * 60 + 30, 14 * 60 + 30]) g += `<text class="ax" x="${x(t) - bw / 2}" y="${H - 4}" text-anchor="${t === INTRA_DESDE ? "start" : "middle"}">${hhmm(t)}</text>`;
+  g += `<text class="ax" x="${W - R}" y="${H - 4}" text-anchor="end">17:00</text>`;
+  g += `<line class="xh" y1="${T}" y2="${VT + VH}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = g;
+
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const mx = e.clientX - svg.getBoundingClientRect().left;
+    const v = V.reduce((a, c) => Math.abs(x(c.t) - mx) < Math.abs(x(a.t) - mx) ? c : a);
+    xh.setAttribute("x1", x(v.t)); xh.setAttribute("x2", x(v.t)); xh.setAttribute("visibility", "visible");
+    tip.innerHTML = `<span class="muted">${hhmm(v.t)}</span> <b>${num(v.c, 2)}</b>`
+      + (esNum(s.cl) ? ` <span class="muted">${pct(v.c / s.cl - 1, 2, true)}</span>` : "")
+      + `<br><span class="muted">Rango</span> ${num(v.l, 0)} – ${num(v.h, 0)}<br><span class="muted">Volumen</span> $ ${fmtVol(v.v)}`;
+    tip.hidden = false;
+    ubicarTip(tip, x(v.t), W);
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
+}
+
+function pintarIntra() {
+  const cont = $("bankIntra");
+  if (cont.children.length !== B.bancos.length) {
+    cont.innerHTML = B.bancos.map(b => `<article class="card mcard" style="--c:${colorBanco(b)}">
+      <div class="mhead"><h3>${b} · intradía</h3><span class="src">5 min · vol. $</span></div>
+      <div class="chart" data-b="${b}" style="height:170px"></div></article>`).join("");
+  }
+  for (const el of cont.querySelectorAll(".chart")) chart(el, [], { draw: (e) => dibujarIntra(e, el.dataset.b) });
+  const hoyBA = ahoraBA(), hay = IN.fecha === hoyBA.fecha && Object.values(IN.b || {}).some(x => x.velas.length);
+  const vivo = B.bancos.some(b => state[`${b} - 24hs`]?.LA?.price);
+  $("intraNota").innerHTML = (hay ? `Intradía de hoy, registrado desde las ${hhmm(Math.max(INTRA_DESDE, IN.desde ?? INTRA_DESDE))}. ` : `El intradía se arma con la rueda abierta (10:30 a 17:00). `)
+    + `Se va construyendo en tu navegador mientras tenés la página abierta: ${vivo ? "con cada operación del feed de CGR" : "con una lectura por minuto de Data912 (con tu token de CGR entra cada operación)"}. `
+    + `No incluye lo que pasó antes de abrirla. Línea punteada: cierre anterior.`;
+}
+
 function pintarBancos() {
   pintarTarjetasBancos();
+  pintarIntra();
   pintarTablero();
   pintarEP();
   pintarTablaBancos();
@@ -1746,6 +1857,7 @@ function bancosEnVivo() {
   requestAnimationFrame(() => {
     bancosPendiente = false;
     pintarTarjetasBancos();
+    pintarIntra();
     pintarEP();
     pintarCapBook();
     if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
