@@ -1827,7 +1827,14 @@ function dibujarIntra(el, b) {
   const V = s.V, W = el.clientWidth, H = 170, L_ = 44, R = 6, T = 8, PH = 100, VT = 122, VH = 28;
   const pw = W - L_ - R, n = (INTRA_HASTA - INTRA_DESDE) / INTRA_VISTA, bw = pw / n;
   const x = (t) => L_ + (t - INTRA_DESDE) / INTRA_VISTA * bw + bw / 2;
-  const precios = V.flatMap(v => [v.h, v.l]).concat(esNum(s.cl) ? [s.cl] : []);
+  // VWAP del día, acumulado vela a vela: pesos operados / nominales operados. El volumen viene en pesos,
+  // así que los nominales de cada vela se estiman con su precio típico (máximo + mínimo + cierre) / 3.
+  let pesos = 0, nominales = 0;
+  for (const v of V) {
+    if (v.v > 0) { pesos += v.v; nominales += v.v / ((v.h + v.l + v.c) / 3); }
+    v.vwap = nominales > 0 ? pesos / nominales : null;
+  }
+  const precios = V.flatMap(v => [v.h, v.l]).concat(V.map(v => v.vwap).filter(esNum));
   let lo = Math.min(...precios), hi = Math.max(...precios);
   if (lo === hi) { lo *= 0.999; hi *= 1.001; }
   const tk = niceTicks(lo, hi, 3); lo = Math.min(lo, tk[0]); hi = Math.max(hi, tk.at(-1));
@@ -1835,7 +1842,12 @@ function dibujarIntra(el, b) {
   const vmax = Math.max(...V.map(v => v.v), 1);
   let g = `<svg width="${W}" height="${H}" role="img" aria-label="Intradía de ${b}">`;
   for (const t of tk) g += `<line class="gl" x1="${L_}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L_ - 5}" y="${y(t) + 3}" text-anchor="end">${num(t, 0)}</text>`;
-  if (esNum(s.cl)) g += `<line class="ref" x1="${L_}" x2="${W - R}" y1="${y(s.cl)}" y2="${y(s.cl)}"/>`;
+  const conVwap = V.filter(v => esNum(v.vwap));
+  if (conVwap.length) {
+    const uv = conVwap.at(-1);
+    g += `<path class="ref" d="${conVwap.map((v, i) => `${i ? "L" : "M"}${x(v.t).toFixed(1)},${y(v.vwap).toFixed(1)}`).join("")}"/>`
+      + `<text x="${W - R}" y="${y(uv.vwap) + (uv.vwap >= V.at(-1).c ? -5 : 11)}" text-anchor="end" style="fill:var(--muted);font:9px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">VWAP ${num(uv.vwap, 0)}</text>`;
+  }
   // Volumen de cada vela, abajo
   for (const v of V) {
     const h = v.v / vmax * VH;
@@ -1858,6 +1870,7 @@ function dibujarIntra(el, b) {
     xh.setAttribute("x1", x(v.t)); xh.setAttribute("x2", x(v.t)); xh.setAttribute("visibility", "visible");
     tip.innerHTML = `<span class="muted">${hhmm(v.t)}</span> <b>${num(v.c, 2)}</b>`
       + (esNum(s.cl) ? ` <span class="muted">${pct(v.c / s.cl - 1, 2, true)}</span>` : "")
+      + (esNum(v.vwap) ? `<br><span class="muted">VWAP</span> ${num(v.vwap, 2)} <span class="muted">(${pct(v.c / v.vwap - 1, 2, true)})</span>` : "")
       + `<br><span class="muted">Rango</span> ${num(v.l, 0)} – ${num(v.h, 0)}<br><span class="muted">Volumen</span> $ ${fmtVol(v.v)}`;
     tip.hidden = false;
     ubicarTip(tip, x(v.t), W);
@@ -1877,7 +1890,7 @@ function pintarIntra() {
   const ult = IR ? Math.max(...Object.values(IR.b).map(x => x.velas.at(-1)?.t ?? 0)) : null;
   $("intraNota").innerHTML = (IR ? `Velas de 15 minutos de CGR hasta las ${hhmm(ult)} (se actualizan solas cada 15 minutos durante la rueda). ` : `Todavía no hay velas de CGR de hoy: aparecen con la rueda abierta (10:30 a 17:00). `)
     + `Los últimos minutos se completan en tu navegador ${vivo ? "con cada operación del feed de CGR" : "con una lectura por minuto de Data912 (con tu token de CGR entra cada operación)"}. `
-    + `Línea punteada: cierre anterior. Volumen en pesos.`;
+    + `Línea punteada: VWAP del día (precio promedio ponderado por volumen, acumulado desde la apertura). Volumen en pesos.`;
 }
 
 /* ---------- Perfil de volumen ---------- */
