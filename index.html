@@ -311,16 +311,24 @@
 
       <div class="sec"><h2>Tablero por tramo · ley Nueva York (GD) contra ley local (AL)</h2></div>
       <div class="card table-wrap"><table class="btable" id="legTable"></table></div>
-      <p class="hint">Precios en pesos (24hs). Prima = (GD / AL − 1) × 100: cuánto más vale el ley Nueva York que el ley local; si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos.</p>
+      <p class="hint">Precios en pesos (24hs). Prima = (GD / AL − 1) × 100: cuánto más vale el ley Nueva York que el ley local; si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos. Paridad = precio en dólares / valor técnico.</p>
 
-      <div class="sec"><h2>Paridades</h2></div>
-      <div class="card table-wrap"><table class="btable" id="parTable"></table></div>
-      <article class="card mcard" style="margin-top:8px">
-        <div class="mhead"><h3>Paridad (%)</h3>
-          <span class="rangos" id="parPata"><button type="button" class="ghost" data-p="G">Ley NY (GD)</button><button type="button" class="ghost" data-p="A">Ley local (AL)</button></span></div>
-        <div class="chart tall" id="parChart"></div>
+      <div class="sec"><h2>Curva por legislación</h2></div>
+      <article class="card mcard">
+        <div class="mhead"><h3>TIR contra duration</h3>
+          <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#3987e5"></span>Ley NY (GD)</span><span><span class="swatch" style="--c:#d95926"></span>Ley local (AL)</span></span></div>
+        <div class="chart" id="curvaChart" style="height:340px"></div>
       </article>
-      <p class="hint">Paridad = precio en dólares / valor técnico × 100. Valor técnico = valor residual (lo que queda por amortizar) + interés corrido desde el último cupón, por lámina de 100 nominales originales; es el mismo para el GD y el AL de cada tramo porque tienen el mismo flujo. Precio en dólares: el de pesos dividido por el MEP implícito del AL30, igual que para la TIR.</p>
+      <p class="hint">Cada punto es un bono: a la derecha, más plazo (duration modificada, en años); arriba, más rendimiento. La distancia vertical entre las dos curvas es el castigo por ley local a ese plazo; el número en cada tramo es el spread en puntos básicos.</p>
+
+      <div class="sec"><h2>Precio a una TIR de salida</h2></div>
+      <div class="toolbar">
+        <span class="rangos" id="salidaBtns"><button type="button" class="ghost" data-t="8">8%</button><button type="button" class="ghost" data-t="9">9%</button><button type="button" class="ghost" data-t="10">10%</button><button type="button" class="ghost" data-t="12">12%</button></span>
+        <label for="salidaInput" style="margin:0 0 0 10px">Otra TIR (%)</label>
+        <input id="salidaInput" type="number" min="1" max="60" step="0.25" style="width:90px;flex:none">
+      </div>
+      <div class="card table-wrap"><table class="btable" id="salidaTable"></table></div>
+      <p class="hint">Cuánto valdría cada bono hoy si rindiera la TIR elegida, y cuánto tendría que subir para llegar. Como el GD y el AL de cada tramo tienen el mismo flujo, a igual TIR valen lo mismo: la diferencia de suba entre los dos es el castigo por ley local. Paridad = precio / valor técnico (valor residual + interés corrido).</p>
 
       <div class="sec"><h2>Evolución</h2></div>
       <div class="legend" id="legLegend"></div>
@@ -1923,8 +1931,8 @@ function legHoy(par) {
 }
 
 function pintarLegTabla() {
-  const cols = ["Par", "GD ($)", "AL ($)", "GD/AL − 1", "Δ día", "TIR GD", "TIR AL", "Spread pb", "Δ pb"];
-  let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="2">Prima</th><th colspan="4">TIR y spread</th></tr>
+  const cols = ["Par", "GD ($)", "AL ($)", "GD/AL − 1", "Δ día", "TIR GD", "TIR AL", "Spread pb", "Δ pb", "GD", "AL"];
+  let h = `<thead><tr class="grp"><th></th><th colspan="2">Precio</th><th colspan="2">Prima</th><th colspan="4">TIR y spread</th><th colspan="2">Paridad</th></tr>
     <tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
   LEG_PARES.forEach(([tramo], i) => {
     const par = L.pares[tramo];
@@ -1933,11 +1941,13 @@ function pintarLegTabla() {
     // Prima del GD sobre el AL, en %; la variación del día va en puntos porcentuales.
     const prima = (x.ratio - 1) * 100, dp = ant ? prima - (ant.ratio - 1) * 100 : null;
     const ds = ant && esNum(ant.spread) && esNum(x.spread) ? x.spread - ant.spread : null;
+    const vt = valorTecnico(par.a, x.f)?.vt, par_ = (p) => vt && x.mep ? `${num(p / x.mep / vt * 100, 1)}%` : "—";
     h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${par.g} / ${par.a}</td>
       <td>${num(x.pg, 2)}</td><td>${num(x.pa, 2)}</td>
       <td><b>${num(prima, 2)}%</b></td><td>${dp == null ? "—" : pill(dp, num(Math.abs(dp), 2) + " pp", -1)}</td>
       <td>${pct(x.tg, 2)}</td><td>${pct(x.ta, 2)}</td>
-      <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td></tr>`;
+      <td><b>${num(x.spread, 0)}</b></td><td>${ds == null ? "—" : pill(ds, num(Math.abs(ds), 0), -1)}</td>
+      <td>${par_(x.pg)}</td><td>${par_(x.pa)}</td></tr>`;
   });
   $("legTable").innerHTML = h + "</tbody>";
 }
@@ -1977,39 +1987,106 @@ function pintarLegGraficos() {
   document.querySelectorAll("#legRangos button").forEach(b => b.classList.toggle("on", +b.dataset.r === L.rango));
 }
 
-L.pata = "G";
-function pintarParidades() {
-  const cols = ["Par", "Valor residual", "Int. corrido", "Valor técnico", "Precio GD US$", "Paridad GD", "Precio AL US$", "Paridad AL", "GD − AL"];
-  let h = `<thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
-  LEG_PARES.forEach(([tramo, a, g], i) => {
-    const par = L.pares[tramo];
-    if (!par) return;
-    const { hoy: x } = legHoy(par), vt = valorTecnico(a, x.f), mep = x.mep;
-    if (!vt || !mep) return;
-    const ug = x.pg / mep, ua = x.pa / mep, pg = ug / vt.vt * 100, pa = ua / vt.vt * 100;
-    h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${g} / ${a}</td>
-      <td>${num(vt.vr, 2)}</td><td>${num(vt.corrido, 2)}</td><td>${num(vt.vt, 2)}</td>
-      <td>${num(ug, 2)}</td><td><b>${num(pg, 1)}%</b></td><td>${num(ua, 2)}</td><td><b>${num(pa, 1)}%</b></td>
-      <td>${num(pg - pa, 1)} pp</td></tr>`;
-  });
-  $("parTable").innerHTML = h + "</tbody>";
-
-  const desde = L.rango ? haceDias(L.rango) : "0000";
-  const xs = [...new Set(LEG_PARES.flatMap(([t]) => (L.pares[t]?.serie || []).map(p => p.f)))].filter(f => f >= desde).sort();
-  const campo = L.pata === "G" ? "parG" : "parA";
-  const series = LEG_PARES.map(([t, a, g], i) => {
-    const m = new Map((L.pares[t]?.serie || []).map(p => [p.f, p[campo]]));
-    return { name: L.pata === "G" ? g : a, color: LEG_COLORES[i], vals: xs.map(f => esNum(m.get(f)) ? m.get(f) : null) };
-  });
-  chart($("parChart"), [], { label: "Paridad", multi: { xs, series }, h: 250, marks: ELECCIONES.filter(m => m.f >= desde), fmt: (v) => `${num(v, 1)}%`, fmtAxis: (v) => `${num(v, 0)}%` });
-  document.querySelectorAll("#parPata button").forEach(b => b.classList.toggle("on", b.dataset.p === L.pata));
+// Flujos que cobra quien compra a la fecha `liq`, como [años hasta el pago, monto].
+const flujosDesde = (bono, liq) => pendientes(bono, liq).map(([f, m]) => [(Date.parse(f) - Date.parse(liq)) / 864e5 / 365, m]);
+// Precio (por lámina de 100) que hace rendir la tasa r, y duration modificada a esa tasa.
+const precioA = (bono, liq, r) => flujosDesde(bono, liq).reduce((a, [t, m]) => a + m / (1 + r) ** t, 0);
+function duracion(bono, liq, r) {
+  const fl = flujosDesde(bono, liq), vp = fl.map(([t, m]) => m / (1 + r) ** t), tot = vp.reduce((a, b) => a + b, 0);
+  return tot ? vp.reduce((a, v, i) => a + v * fl[i][0], 0) / tot / (1 + r) : null;
 }
-document.querySelectorAll("#parPata button").forEach(b => b.addEventListener("click", () => { L.pata = b.dataset.p; pintarParidades(); }));
+
+// Curva por legislación: TIR contra duration, una línea por ley, con el spread de cada tramo.
+const C_GD = "#3987e5", C_AL = "#d95926";
+function puntosCurva() {
+  return LEG_PARES.map(([t, a, g]) => {
+    const par = L.pares[t], x = par && legHoy(par).hoy;
+    if (!x || !esNum(x.ta) || !esNum(x.tg)) return null;
+    const vt = valorTecnico(a, x.f)?.vt;
+    return { t, a, g, f: x.f, ta: x.ta, tg: x.tg, da: duracion(a, x.f, x.ta), dg: duracion(g, x.f, x.tg), spread: x.spread,
+             ua: x.pa / x.mep, ug: x.pg / x.mep, parA: vt ? x.pa / x.mep / vt * 100 : null, parG: vt ? x.pg / x.mep / vt * 100 : null };
+  }).filter(Boolean);
+}
+
+function dibujarCurva(el) {
+  const P = puntosCurva();
+  if (!P.length || !el.clientWidth) return;
+  const W = el.clientWidth, H = 340, L_ = 48, R = 24, T = 18, B_ = 34, pw = W - L_ - R, ph = H - T - B_;
+  const ds = P.flatMap(p => [p.da, p.dg]), ys = P.flatMap(p => [p.ta, p.tg]);
+  const xt = niceTicks(Math.max(0, Math.min(...ds) - 0.4), Math.max(...ds) + 0.4, 6), yt = niceTicks(Math.min(...ys) - 0.004, Math.max(...ys) + 0.004, 5);
+  const x = (d) => L_ + (d - xt[0]) / (xt.at(-1) - xt[0]) * pw, y = (v) => T + ph - (v - yt[0]) / (yt.at(-1) - yt[0]) * ph;
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Curva de rendimientos por legislación">`;
+  for (const t of yt) s += `<line class="gl" x1="${L_}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L_ - 6}" y="${y(t) + 3}" text-anchor="end">${pct(t, 1)}</text>`;
+  for (const t of xt) s += `<text class="ax" x="${x(t)}" y="${H - 18}" text-anchor="middle">${num(t, 1)}</text>`;
+  s += `<text class="ax" x="${L_ + pw / 2}" y="${H - 4}" text-anchor="middle">duration modificada (años)</text>`;
+  // El castigo de cada tramo: línea punteada entre el GD y el AL, con el spread en pb.
+  for (const p of P) {
+    const xm = (x(p.dg) + x(p.da)) / 2, ym = (y(p.tg) + y(p.ta)) / 2;
+    s += `<line class="mk" x1="${x(p.dg)}" y1="${y(p.tg)}" x2="${x(p.da)}" y2="${y(p.ta)}"/>`
+      + `<text x="${xm + 8}" y="${ym + 3}" style="fill:var(--muted);font:9px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${num(p.spread, 0)} pb</text>`;
+  }
+  const linea = (kd, ky) => [...P].sort((a, b) => a[kd] - b[kd]).map((p, i) => `${i ? "L" : "M"}${x(p[kd]).toFixed(1)},${y(p[ky]).toFixed(1)}`).join("");
+  s += `<path class="ml" style="stroke:${C_GD}" d="${linea("dg", "tg")}"/><path class="ml" style="stroke:${C_AL}" d="${linea("da", "ta")}"/>`;
+  const et = (px, py, t, dy) => `<text x="${px}" y="${py + dy}" text-anchor="middle" style="fill:var(--text);font:600 10px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${t}</text>`;
+  for (const p of P) {
+    s += `<circle class="md" r="4.5" cx="${x(p.dg)}" cy="${y(p.tg)}" style="fill:${C_GD}"/>` + et(x(p.dg), y(p.tg), p.g, 17)
+      + `<circle class="md" r="4.5" cx="${x(p.da)}" cy="${y(p.ta)}" style="fill:${C_AL}"/>` + et(x(p.da), y(p.ta), p.a, -10);
+  }
+  s += `</svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  const todos = P.flatMap(p => [
+    { b: p.g, cx: x(p.dg), cy: y(p.tg), tir: p.tg, d: p.dg, u: p.ug, par: p.parG, c: C_GD },
+    { b: p.a, cx: x(p.da), cy: y(p.ta), tir: p.ta, d: p.da, u: p.ua, par: p.parA, c: C_AL }]);
+  el.onpointermove = (e) => {
+    const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const q = todos.reduce((a, b) => (b.cx - mx) ** 2 + (b.cy - my) ** 2 < (a.cx - mx) ** 2 + (a.cy - my) ** 2 ? b : a);
+    tip.innerHTML = `<span class="swatch" style="--c:${q.c}"></span><b>${q.b}</b><br><span class="muted">TIR</span> ${pct(q.tir, 2)}<br><span class="muted">Duration</span> ${num(q.d, 2)} años`
+      + `<br><span class="muted">Precio</span> US$ ${num(q.u, 2)}<br><span class="muted">Paridad</span> ${q.par != null ? num(q.par, 1) + "%" : "—"}`;
+    tip.hidden = false;
+    tip.style.top = Math.max(0, Math.min(H - tip.offsetHeight, q.cy - tip.offsetHeight / 2)) + "px";
+    ubicarTip(tip, q.cx, W);
+  };
+  el.onpointerleave = () => { tip.hidden = true; };
+}
+
+// Precio objetivo a una TIR de salida (la misma para las dos leyes) y suba necesaria desde hoy.
+L.salida = +(store.get("leg_salida") || 9) / 100;
+function pintarSalida() {
+  const r = L.salida, P = puntosCurva();
+  let h = `<thead><tr class="grp"><th></th><th colspan="2">A una TIR de ${pct(r, 2)}</th><th colspan="3">Ley NY (GD)</th><th colspan="3">Ley local (AL)</th></tr>
+    <tr><th>Par</th><th>Precio US$</th><th>Paridad</th><th>TIR hoy</th><th>Precio hoy</th><th>Suba</th><th>TIR hoy</th><th>Precio hoy</th><th>Suba</th></tr></thead><tbody>`;
+  P.forEach((p, i) => {
+    const obj = precioA(p.a, p.f, r), vt = valorTecnico(p.a, p.f)?.vt;
+    const suba = (u) => pill(obj / u - 1, pct(Math.abs(obj / u - 1), 1), 1);
+    h += `<tr><td class="sym"><span class="swatch" style="--c:${LEG_COLORES[i]}"></span>${p.g} / ${p.a}</td>
+      <td><b>${num(obj, 2)}</b></td><td>${vt ? num(obj / vt * 100, 1) + "%" : "—"}</td>
+      <td>${pct(p.tg, 2)}</td><td>${num(p.ug, 2)}</td><td>${suba(p.ug)}</td>
+      <td>${pct(p.ta, 2)}</td><td>${num(p.ua, 2)}</td><td>${suba(p.ua)}</td></tr>`;
+  });
+  $("salidaTable").innerHTML = h + "</tbody>";
+  document.querySelectorAll("#salidaBtns button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.t / 100 - r) < 1e-9));
+  if (document.activeElement !== $("salidaInput")) $("salidaInput").value = +(r * 100).toFixed(2);
+}
+function fijarSalida(v) {
+  if (!(v > 0 && v < 100)) return;
+  L.salida = v / 100;
+  store.set("leg_salida", String(v));
+  pintarSalida();
+}
+document.querySelectorAll("#salidaBtns button").forEach(b => b.addEventListener("click", () => fijarSalida(+b.dataset.t)));
+$("salidaInput").addEventListener("input", (e) => fijarSalida(+e.target.value));
+
+function pintarCurva() {
+  chart($("curvaChart"), [], { draw: dibujarCurva });
+  pintarSalida();
+}
 
 function pintarLegislacion() {
   pintarLegStrip();
   pintarLegTabla();
-  pintarParidades();
+  pintarCurva();
   pintarLegGraficos();
   const ult = L.pares["30"]?.serie.at(-1)?.f;
   const vivo = LEG_PARES.some(([, a]) => precioLeg(a)?.fuente === "cgr") ? "Precios de hoy en vivo desde CGR."
@@ -2025,10 +2102,10 @@ let legPendiente = false;
 function legEnVivo() {
   if (!L.cargado || legPendiente) return;
   legPendiente = true;
-  requestAnimationFrame(() => { legPendiente = false; pintarLegTabla(); pintarLegStrip(); pintarParidades(); });
+  requestAnimationFrame(() => { legPendiente = false; pintarLegTabla(); pintarLegStrip(); pintarCurva(); });
 }
 
-document.querySelectorAll("#legRangos button").forEach(b => b.addEventListener("click", () => { L.rango = +b.dataset.r; pintarLegGraficos(); pintarParidades(); }));
+document.querySelectorAll("#legRangos button").forEach(b => b.addEventListener("click", () => { L.rango = +b.dataset.r; pintarLegGraficos(); }));
 $("legRefresh").addEventListener("click", cargarLegislacion);
 // Sin feed de CGR, los precios de hoy se refrescan cada minuto desde Data912.
 setInterval(async () => {
