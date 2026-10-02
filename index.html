@@ -279,6 +279,11 @@
       <div class="bank-cards" id="bankIntra" style="margin-top:8px"></div>
       <p class="hint" id="intraNota"></p>
 
+      <div class="sec"><h2>Perfil de volumen</h2></div>
+      <div class="toolbar"><span class="rangos" id="perfilRangos"><button type="button" class="ghost" data-n="1">Hoy</button><button type="button" class="ghost" data-n="5">5 ruedas</button><button type="button" class="ghost" data-n="20">20 ruedas</button></span></div>
+      <div class="bank-cards" id="bankPerfil" style="margin-top:0"></div>
+      <p class="hint" id="perfilNota"></p>
+
       <div class="sec"><h2>Market cap contra patrimonio</h2></div>
       <div class="headlines" id="capKpis" style="margin-top:0"></div>
       <article class="card mcard" style="margin-top:8px">
@@ -1875,9 +1880,118 @@ function pintarIntra() {
     + `Línea punteada: cierre anterior. Volumen en pesos.`;
 }
 
+/* ---------- Perfil de volumen ---------- */
+//
+// Cuánto se operó en cada nivel de precio. No hay datos operación por operación, así que el volumen de
+// cada vela de 15 minutos se reparte en forma pareja entre su mínimo y su máximo (la aproximación usual
+// con velas). POC: el nivel con más volumen. Zona de valor: los niveles contiguos al POC que juntan el 70%.
+const PF = { hist: null, n: +(store.get("perfil_n") || 5) };
+
+async function cargarPerfil() {
+  try { PF.hist = await getJSON(`data/perfil.json?t=${hoy()}`); } catch { PF.hist = null; }
+}
+
+// Velas [mínimo, máximo, volumen] de las últimas n ruedas, contando la de hoy si ya tiene operaciones.
+function velasPerfil(b, n) {
+  const hoyV = velasIntra(b).V.map(v => [v.l, v.h, v.v]);
+  const prev = PF.hist?.b?.[b] || [];
+  const faltan = n - (hoyV.length ? 1 : 0);
+  const fechas = [...new Set(prev.map(x => x[0]))].sort().slice(faltan > 0 ? -faltan : prev.length);
+  const desde = fechas[0];
+  return { velas: [...(faltan > 0 && desde ? prev.filter(x => x[0] >= desde).map(x => [x[1], x[2], x[3]]) : []), ...hoyV],
+           ruedas: (faltan > 0 ? fechas.length : 0) + (hoyV.length ? 1 : 0), desde: faltan > 0 ? desde : null };
+}
+
+function perfilDe(velas) {
+  const v = velas.filter(x => x[2] > 0 && x[0] > 0);
+  if (!v.length) return null;
+  const lo = Math.min(...v.map(x => x[0])), hi = Math.max(...v.map(x => x[1]));
+  const raw = (hi - lo) / 22 || lo * 0.001, mag = 10 ** Math.floor(Math.log10(raw)), r = raw / mag;
+  const paso = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * mag;
+  const base = Math.floor(lo / paso) * paso, n = Math.max(1, Math.ceil((hi - base) / paso + 1e-9));
+  const bins = Array.from({ length: n }, (_, i) => ({ p0: base + i * paso, p1: base + (i + 1) * paso, v: 0 }));
+  for (const [l, h, vol] of v) {
+    if (h <= l) { bins[Math.min(n - 1, Math.floor((l - base) / paso))].v += vol; continue; }
+    for (const bn of bins) {
+      const sol = Math.min(h, bn.p1) - Math.max(l, bn.p0);
+      if (sol > 0) bn.v += vol * sol / (h - l);
+    }
+  }
+  const total = bins.reduce((a, x) => a + x.v, 0);
+  let poc = 0;
+  bins.forEach((x, i) => { if (x.v > bins[poc].v) poc = i; });
+  // Zona de valor: desde el POC se suma el vecino con más volumen hasta llegar al 70%.
+  let a = poc, z = poc, acum = bins[poc].v;
+  while (acum < 0.7 * total && (a > 0 || z < n - 1)) {
+    const abajo = a > 0 ? bins[a - 1].v : -1, arriba = z < n - 1 ? bins[z + 1].v : -1;
+    if (arriba >= abajo) acum += bins[++z].v; else acum += bins[--a].v;
+  }
+  return { bins, poc, va: [a, z], total, paso };
+}
+
+function dibujarPerfil(el, b) {
+  if (!el.clientWidth) return;
+  const src = velasPerfil(b, PF.n), P = perfilDe(src.velas);
+  if (!P) { el.innerHTML = `<p class="hint" style="margin:0;padding-top:90px;text-align:center">Sin operaciones en el período</p>`; return; }
+  const W = el.clientWidth, H = 250, L_ = 46, R = 8, T = 8, B_ = 8, pw = W - L_ - R, ph = H - T - B_;
+  const n = P.bins.length, lo = P.bins[0].p0, hi = P.bins.at(-1).p1, vmax = Math.max(...P.bins.map(x => x.v));
+  const y = (p) => T + ph - (p - lo) / (hi - lo) * ph, alto = ph / n;
+  const dec = P.paso < 1 ? 2 : 0;
+  let g = `<svg width="${W}" height="${H}" role="img" aria-label="Perfil de volumen de ${b}">`;
+  const cada = Math.ceil(n / 8);
+  P.bins.forEach((x, i) => {
+    if (i % cada === 0) g += `<text class="ax" x="${L_ - 5}" y="${y(x.p0) + 3}" text-anchor="end">${num(x.p0, dec)}</text><line class="gl" x1="${L_}" x2="${W - R}" y1="${y(x.p0)}" y2="${y(x.p0)}"/>`;
+    const w = x.v / vmax * (pw - 62), enVA = i >= P.va[0] && i <= P.va[1];
+    if (w > 0) g += `<rect x="${L_}" y="${(y(x.p1) + 0.5).toFixed(1)}" width="${Math.max(1, w).toFixed(1)}" height="${Math.max(1, alto - 1).toFixed(1)}" style="fill:${enVA ? "var(--c)" : "var(--muted)"};opacity:${i === P.poc ? 1 : enVA ? 0.6 : 0.4}"/>`;
+  });
+  const poc = P.bins[P.poc], et = (yy, t, c) => `<text x="${W - R}" y="${yy + 3}" text-anchor="end" style="fill:${c};font:600 9px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${t}</text>`;
+  g += et((y(poc.p0) + y(poc.p1)) / 2, `POC ${num((poc.p0 + poc.p1) / 2, dec)}`, "var(--text)");
+  // Precio actual
+  const pr = precioBanco(b);
+  if (pr && pr.p >= lo && pr.p <= hi) g += `<line x1="${L_}" x2="${W - R}" y1="${y(pr.p)}" y2="${y(pr.p)}" style="stroke:var(--accent);stroke-dasharray:4 3"/>` + et(y(pr.p) - 7, num(pr.p, 0), "var(--accent)");
+  g += `</svg><div class="tip" hidden></div>`;
+  el.innerHTML = g;
+
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const r = svg.getBoundingClientRect(), my = e.clientY - r.top;
+    const i = Math.max(0, Math.min(n - 1, Math.floor((T + ph - my) / alto))), x = P.bins[i];
+    tip.innerHTML = `<span class="muted">${num(x.p0, dec)} – ${num(x.p1, dec)}</span>${i === P.poc ? " <b>POC</b>" : i >= P.va[0] && i <= P.va[1] ? ` <span class="muted">zona de valor</span>` : ""}`
+      + `<br><span class="muted">Volumen</span> <b>$ ${fmtVol(x.v)}</b><br><span class="muted">Del total</span> ${pct(x.v / P.total, 1)}`;
+    tip.hidden = false;
+    tip.style.top = Math.max(0, Math.min(H - tip.offsetHeight, y(x.p1) - 6)) + "px";
+    ubicarTip(tip, e.clientX - r.left, W);
+  };
+  el.onpointerleave = () => { tip.hidden = true; };
+}
+
+function pintarPerfil() {
+  const cont = $("bankPerfil");
+  if (cont.children.length !== B.bancos.length) {
+    cont.innerHTML = B.bancos.map(b => `<article class="card mcard" style="--c:${colorBanco(b)}">
+      <div class="mhead"><h3>${b} · perfil</h3><span class="src"></span></div>
+      <div class="chart" data-b="${b}" style="height:250px"></div></article>`).join("");
+  }
+  let ruedas = 0, desde = null;
+  for (const art of cont.children) {
+    const el = art.querySelector(".chart"), b = el.dataset.b, src = velasPerfil(b, PF.n), P = perfilDe(src.velas);
+    ruedas = Math.max(ruedas, src.ruedas); desde = desde ?? src.desde;
+    art.querySelector(".src").textContent = P ? `Zona de valor ${num(P.bins[P.va[0]].p0, 0)} – ${num(P.bins[P.va[1]].p1, 0)}` : "";
+    chart(el, [], { draw: (e) => dibujarPerfil(e, b) });
+  }
+  document.querySelectorAll("#perfilRangos button").forEach(x => x.classList.toggle("on", +x.dataset.n === PF.n));
+  $("perfilNota").innerHTML = `Volumen operado en cada nivel de precio${ruedas > 1 ? `, sumando las últimas ${ruedas} ruedas${desde ? ` (desde el ${fDia(desde)})` : ""}` : ", en la rueda de hoy"}. `
+    + `<b>POC</b>: el nivel con más volumen. <b>Zona de valor</b> (en color): los niveles alrededor del POC donde se operó el 70%. Línea ámbar: precio actual. `
+    + `Se arma con velas de 15 minutos de CGR, repartiendo el volumen de cada vela en forma pareja entre su mínimo y su máximo: los niveles son una buena aproximación, no un dato exacto por operación.`;
+}
+document.querySelectorAll("#perfilRangos button").forEach(x => x.addEventListener("click", () => {
+  PF.n = +x.dataset.n; store.set("perfil_n", String(PF.n)); pintarPerfil();
+}));
+
 function pintarBancos() {
   pintarTarjetasBancos();
   pintarIntra();
+  pintarPerfil();
   pintarTablero();
   pintarEP();
   pintarTablaBancos();
@@ -1961,7 +2075,7 @@ async function cargarBancos() {
     $("bancosError").hidden = true;
     $("bancosBody").hidden = false;
     pintarBancos();   // ya con la planilla; IPC y precios se completan cuando lleguen
-    cargarIntraRepo().then(pintarIntra);
+    Promise.all([cargarIntraRepo(), cargarPerfil()]).then(() => { pintarIntra(); pintarPerfil(); });
     const leida = `Planilla leída a las ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}: ${B.calc.filter(r => esNum(r.ROE)).length} balances de ${B.bancos.length} bancos.`;
     $("bancosEstado").textContent = `${leida} Buscando precios e IPC…`;
 
@@ -1994,7 +2108,7 @@ async function cargarBancos() {
 
 $("bancosRefresh").addEventListener("click", cargarBancos);
 setInterval(() => {
-  if (B.cargado && tab === "bancos" && document.visibilityState === "visible") cargarIntraRepo().then(pintarIntra);
+  if (B.cargado && tab === "bancos" && document.visibilityState === "visible") cargarIntraRepo().then(() => { pintarIntra(); pintarPerfil(); });
 }, 5 * 60 * 1000);
 
 // Sin feed de CGR, los precios de los bancos se refrescan cada minuto desde data912.
