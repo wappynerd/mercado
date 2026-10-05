@@ -206,7 +206,7 @@
   <div id="tab-mercado" hidden>
     <div class="intro">
       <h2>El tablero en vivo</h2>
-      <p>Precios de BYMA tick a tick.</p>
+      
     </div>
 
     <!-- Login: el token se escribe acá y queda guardado solo en este navegador -->
@@ -245,7 +245,7 @@
     <div class="macro-bar">
       <div class="intro">
         <h2>La macro, de un vistazo</h2>
-        <p id="macroEstado">Buscando los últimos datos…</p>
+        <p id="macroEstado">Cargando…</p>
       </div>
       <button type="button" class="ghost" id="macroRefresh">Actualizar</button>
     </div>
@@ -258,7 +258,7 @@
       <div class="mhead"><h3>Riesgo país contra ITCRM</h3><span class="legend" id="primaLegend" style="margin:0"></span></div>
       <div class="chart" id="primaChart" style="height:420px"><p class="hint">Cargando…</p></div>
     </article>
-    <p class="hint" id="primaNota"></p>
+    
   </div>
 
   <!-- ============================ BANCOS ============================= -->
@@ -276,12 +276,12 @@
     <div id="bancosBody" hidden>
       <div class="bank-cards" id="bankCards"></div>
       <div class="bank-cards" id="bankIntra" style="margin-top:8px"></div>
-      <p class="hint" id="intraNota"></p>
+      
 
       <div class="sec"><h2>Perfil de volumen</h2></div>
       <div class="toolbar"><span class="rangos" id="perfilRangos"><button type="button" class="ghost" data-n="1">Hoy</button><button type="button" class="ghost" data-n="5">5 ruedas</button><button type="button" class="ghost" data-n="20">20 ruedas</button></span></div>
       <div class="bank-cards" id="bankPerfil" style="margin-top:0"></div>
-      <p class="hint" id="perfilNota"></p>
+      
 
       <div class="sec"><h2>Market cap contra patrimonio</h2></div>
       <div class="headlines" id="capKpis" style="margin-top:0"></div>
@@ -291,16 +291,16 @@
         <div class="toolbar" style="margin:8px 0 0"><span class="rangos" id="capRangos"><button type="button" class="ghost" data-r="-1">Con los 4 bancos</button><button type="button" class="ghost" data-r="182">6M</button><button type="button" class="ghost" data-r="365">1A</button><button type="button" class="ghost" data-r="0">Todo</button></span></div>
         <div class="chart" id="capChart" style="height:400px"><p class="hint">Bajando la historia de precios…</p></div>
       </article>
-      <p class="hint" id="capNota"></p>
+      
 
       <div class="sec"><h2>Tablero</h2></div>
       <div class="legend" id="bankLegend"></div>
       <div class="grid grid-feat" id="bankFeat"></div>
-      <p class="hint" id="epNota"></p>
+      
 
       <div class="sec"><h2>Último trimestre, banco por banco</h2></div>
       <div class="card table-wrap"><table class="btable" id="bankTable"></table></div>
-      <p class="hint">Rentabilidades sobre saldos promedio, anualizadas ×4 (la convención de los press releases). Los montos vienen reexpresados a moneda homogénea.</p>
+      
 
     </div>
   </div>
@@ -325,7 +325,7 @@
 
       <div class="sec"><h2>Tablero por tramo · ley Nueva York (GD) contra ley local (AL)</h2></div>
       <div class="card table-wrap"><table class="btable" id="legTable"></table></div>
-      <p class="hint">Precios en pesos (24hs). Prima = (GD / AL − 1) × 100: cuánto más vale el ley Nueva York que el ley local; si sube, crece el castigo por ley local. TIR: los dos precios se pasan a dólares con el mismo MEP (el implícito del AL30, AL30 / AL30D), así las dos patas quedan comparables. Spread = TIR AL − TIR GD, en puntos básicos. Paridad = precio en dólares / valor técnico.</p>
+      
 
       <div class="sec"><h2>Curva por legislación</h2></div>
       <article class="card mcard">
@@ -333,7 +333,7 @@
           <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#3987e5"></span>Ley NY (GD)</span><span><span class="swatch" style="--c:#d95926"></span>Ley local (AL)</span></span></div>
         <div class="chart" id="curvaChart" style="height:340px"></div>
       </article>
-      <p class="hint">Cada punto es un bono: a la derecha, más plazo (duration modificada, en años); arriba, más rendimiento. La distancia vertical entre las dos curvas es el castigo por ley local a ese plazo; el número en cada tramo es el spread en puntos básicos.</p>
+      
 
       <div class="sec"><h2>Precio a una TIR de salida</h2></div>
       <div class="toolbar">
@@ -342,16 +342,16 @@
         <input id="salidaInput" type="number" min="1" max="60" step="0.25" style="width:90px;flex:none">
       </div>
       <div class="card table-wrap"><table class="btable" id="salidaTable"></table></div>
-      <p class="hint">Cuánto valdría cada bono hoy si rindiera la TIR elegida, y cuánto tendría que subir para llegar. Como el GD y el AL de cada tramo tienen el mismo flujo, a igual TIR valen lo mismo: la diferencia de suba entre los dos es el castigo por ley local. Paridad = precio / valor técnico (valor residual + interés corrido).</p>
+      
 
       <div class="sec"><h2>Evolución</h2></div>
       <div class="legend" id="legLegend"></div>
-      <article class="card mcard" style="margin-bottom:8px"><div class="mhead"><h3>Prima GD / AL − 1</h3><span class="src">En pesos · (GD / AL − 1) × 100</span></div><div class="chart tall" id="legRatio"></div></article>
+      <article class="card mcard" style="margin-bottom:8px"><div class="mhead"><h3>Prima GD / AL − 1</h3><span class="src"></span></div><div class="chart tall" id="legRatio"></div></article>
       <div class="grid grid-feat">
-        <article class="card mcard"><div class="mhead"><h3>Volumen del GD</h3><span class="src">% del volumen del par en pesos · media 20r</span></div><div class="chart tall" id="legVol"></div></article>
-        <article class="card mcard"><div class="mhead"><h3>Canje (CCL / MEP − 1)</h3><span class="src">AL30D / AL30C</span></div><div class="chart tall" id="legCanje"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Volumen del GD</h3><span class="src"></span></div><div class="chart tall" id="legVol"></div></article>
+        <article class="card mcard"><div class="mhead"><h3>Canje (CCL / MEP − 1)</h3><span class="src"></span></div><div class="chart tall" id="legCanje"></div></article>
       </div>
-      <p class="hint" id="legNota"></p>
+      
     </div>
   </div>
 </main>
@@ -997,10 +997,6 @@ function pintarPrima() {
   ].map(([k, t]) => `<div class="headline"><div class="k">${k}</div><p>${t}</p></div>`).join("");
   $("primaLegend").innerHTML = REGIMENES.map(r => `<span><span class="swatch" style="--c:${r.c}"></span>${r.nombre}</span>`).join("");
   chart($("primaChart"), [], { draw: dibujarPrima });
-  $("primaNota").innerHTML = `Cada punto es una semana. ITCRM: índice de tipo de cambio real multilateral (17-12-2015 = 100); más bajo es un peso más caro. `
-    + `La línea punteada es la relación entre las dos variables estimada solo con el régimen vigente (${reg}, ${num(PR.fit.n, 0)} ruedas, R² ${num(PR.fit.r2, 2)}): explica una parte moderada de los movimientos, así que el desvío es una referencia, no una señal precisa. `
-    + `La relación cambia con cada régimen cambiario (se ve en cómo se separan los colores), por eso no se usa toda la historia junta. `
-    + `El ITCRM se calcula con el dólar oficial: con brecha, parte de la presión cambiaria no aparece acá.`;
 }
 
 function dibujarPrima(el) {
@@ -1052,7 +1048,7 @@ function dibujarPrima(el) {
 /* ---------- Carga de todo el tablero ---------- */
 
 async function cargarMacro() {
-  $("macroEstado").textContent = "Buscando los últimos datos…";
+  $("macroEstado").textContent = "Cargando…";
   const d1 = haceDias(400), d2 = haceDias(730);
 
   await Promise.allSettled([
@@ -1066,7 +1062,7 @@ async function cargarMacro() {
         val: num(u.v, 2),
         chg: { v: var1, txt: pct(Math.abs(var1), 2), pol: 0 },
         sub: banda ? `Techo de la banda: <b class="num">${num(banda, 2)}</b>` : "",
-        foot: `Dato al ${fDia(u.f)} · punteado: techo de la banda`,
+        foot: `Dato al ${fDia(u.f)}`,
         pts: tc, o: { fmt: (v) => num(v, 2), fmtAxis: (v) => num(v, 0), refs: [{ label: "Techo banda", pts: sup }] },
       });
       cinta("a3500", num(u.v, 2), cintaChg(var1, pct(Math.abs(var1), 2), 0));
@@ -1094,7 +1090,7 @@ async function cargarMacro() {
         val: `US$ ${num(u.v, 0)} M`,
         chg: { v: u.v - p.v, txt: `${num(Math.abs(u.v - p.v), 0)} M`, pol: 1 },
         sub: `En 30 días: <b class="num">${signo(u.v - hace.v)}${num(u.v - hace.v, 0)} M</b>`,
-        foot: `Dato al ${fDia(u.f)} · se publica con ~2 ruedas de atraso`,
+        foot: `Dato al ${fDia(u.f)}`,
         pts: r, o: { fmt: (v) => `US$ ${num(v, 0)} M`, fmtAxis: (v) => num(v / 1000, 0) + " mil" },
       });
       cinta("reservas", `US$ ${num(u.v, 0)} M`, cintaChg(u.v - p.v, `${num(Math.abs(u.v - p.v), 0)} M`, 1));
@@ -1109,7 +1105,7 @@ async function cargarMacro() {
       llenar("compras", {
         val: `US$ ${num(u.v, 0)} M`,
         sub: `${mayus(MES_L[+u.f.slice(5, 7) - 1])}${parcial ? ", parcial" : ""}` + (ant ? ` · ${MES_L[+ant.f.slice(5, 7) - 1]}: <b class="num">US$ ${num(ant.v, 0)} M</b>` : ""),
-        foot: `Último día informado: ${fDia(ult.f)} (${signo(ult.v)}${num(ult.v, 0)} M) · ~4 ruedas de atraso`,
+        foot: `Último día: ${fDia(ult.f)} (${signo(ult.v)}${num(ult.v, 0)} M)`,
         pts, o: { type: "bar", signed: true, partialLast: parcial, fx: fMes, fmt: (v) => `US$ ${num(v, 0)} M`, fmtAxis: (v) => num(v, 0) },
       });
     }),
@@ -1136,8 +1132,8 @@ async function cargarMacro() {
       llenar("rem", {
         val: `${num(u.v, 1)}%`,
         chg: { v: d, txt: `${num(Math.abs(d * 100), 1)} pp`, pol: -1 },
-        sub: "Mediana de las expectativas, vs. el relevamiento anterior",
-        foot: `Relevamiento de ${fMes(u.f)}`,
+        sub: "",
+        foot: fMes(u.f),
         pts: r, o: { fx: fMes, fmt: (v) => `${num(v, 1)}%`, fmtAxis: (v) => num(v, 0) + "%" },
       });
       cinta("rem", `${num(u.v, 1)}%`);
@@ -1170,7 +1166,7 @@ async function cargarMacro() {
       llenar("ipc", {
         val: pct(ipc.v, 1), chg: { ...pp(ipc.v, ipcAnt.v), pol: -1 },
         sub: `Interanual: <b class="num">${pct(en(s.ipc_ia, ipc.f), 1)}</b>`,
-        foot: `IPC nacional, nivel general · ${fMes(ipc.f)} · vs. mes anterior`,
+        foot: fMes(ipc.f),
         pts: ultimos(s.ipc), o: { type: "bar", ...pctO(1) },
       });
       cinta("ipc", `${pct(ipc.v, 1)} ${MES[+ipc.f.slice(5, 7) - 1]}`, cintaChg(ipc.v - ipcAnt.v, `${num(Math.abs(ipc.v - ipcAnt.v) * 100, 1)} pp`, -1));
@@ -1178,7 +1174,7 @@ async function cargarMacro() {
       llenar("nucleo", {
         val: pct(nuc.v, 1), chg: { ...pp(nuc.v, nucAnt.v), pol: -1 },
         sub: `Nivel general: <b class="num">${pct(en(s.ipc, nuc.f), 1)}</b>`,
-        foot: `Sin estacionales ni regulados · ${fMes(nuc.f)}`,
+        foot: fMes(nuc.f),
         pts: ultimos(s.nucleo), o: { type: "bar", ...pctO(1) },
       });
 
@@ -1187,13 +1183,13 @@ async function cargarMacro() {
       llenar("emae", {
         val: pct(em.v, 1, true),
         sub: `Interanual: <b class="num">${pct(en(s.emae_ia, em.f), 1, true)}</b>`,
-        foot: `Desestacionalizado, var. mensual · ${fMes(em.f)}`,
+        foot: fMes(em.f),
         pts: ultimos(s.emae), o: { type: "bar", signed: true, ...pctO(1, true) },
       });
       const ip = s.ipi_ia.at(-1);
       llenar("ipi", {
         val: pct(ip.v, 1, true), sub: "Var. interanual",
-        foot: `IPI manufacturero, tendencia-ciclo · ${fMes(ip.f)}`,
+        foot: fMes(ip.f),
         pts: ultimos(s.ipi_ia), o: { type: "bar", signed: true, ...pctO(1, true) },
       });
 
@@ -1204,7 +1200,7 @@ async function cargarMacro() {
       llenar("salarios", {
         val: pct(sr.v, 1, true),
         sub: `Nominal <b class="num">${pct(sr.nom, 1)}</b> vs. IPC <b class="num">${pct(en(s.ipc, sr.f), 1)}</b>`,
-        foot: `Índice de salarios deflactado por IPC, var. mensual · ${fMes(sr.f)}`,
+        foot: fMes(sr.f),
         pts: ultimos(real), o: { type: "bar", signed: true, ...pctO(1, true) },
       });
 
@@ -1215,14 +1211,14 @@ async function cargarMacro() {
       const fB = (v) => `$ ${num(v, 2)} bill.`;
       llenar("primario", {
         val: fB(pr.v), sub: `Acumulado ${pr.f.slice(0, 4)}: <b class="num">${fB(acum)}</b>`,
-        foot: `Sector público nacional, base caja · ${fMes(pr.f)}`,
+        foot: fMes(pr.f),
         pts: ultimos(prim), o: { type: "bar", signed: true, fx: fMes, fmt: fB, fmtAxis: (v) => num(v, 1) },
       });
       const rc = s.recaud_ia.at(-1), ipcIa = en(s.ipc_ia, rc.f);
       llenar("recaudacion", {
         val: pct(rc.v, 1, true),
         sub: `Var. interanual nominal` + (ipcIa != null ? ` · real: <b class="num">${pct((1 + rc.v) / (1 + ipcIa) - 1, 1, true)}</b>` : ""),
-        foot: `Recaudación total · ${fMes(rc.f)}`,
+        foot: fMes(rc.f),
         pts: ultimos(s.recaud_ia), o: { type: "bar", ...pctO(1, true) },
       });
 
@@ -1233,7 +1229,7 @@ async function cargarMacro() {
       const fU = (v) => `US$ ${num(v, 0)} M`;
       llenar("saldo", {
         val: fU(sa.v), sub: `Expo <b class="num">${fU(sa.expo)}</b> · Impo <b class="num">${fU(sa.impo)}</b>`,
-        foot: `Intercambio comercial argentino · ${fMes(sa.f)}`,
+        foot: fMes(sa.f),
         pts: ultimos(saldo), o: { type: "bar", signed: true, fx: fMes, fmt: fU, fmtAxis: (v) => num(v, 0) },
       });
     }),
@@ -1245,7 +1241,7 @@ async function cargarMacro() {
         val: pct(u.v, 1),
         chg: ant ? { ...{ v: u.v - ant.v, txt: `${num(Math.abs(u.v - ant.v) * 100, 1)} pp` }, pol: -1 } : null,
         sub: ant ? `Hace un año: <b class="num">${pct(ant.v, 1)}</b>` : "",
-        foot: `Tasa de desocupación, total aglomerados · ${fTrim(u.f)}`,
+        foot: fTrim(u.f),
         pts: s.d, o: { fx: fTrim, fmt: (v) => pct(v, 1), fmtAxis: (v) => pct(v, 0) },
       });
     }),
@@ -1269,7 +1265,7 @@ async function cargarRiesgo() {
   llenar("riesgo", {
     val: `${num(u.v, 0)} pb`, fuente,
     chg: { v: d, txt: `${num(Math.abs(d), 0)} pb`, pol: -1 },
-    sub: "EMBI · se actualiza cada minuto",
+    sub: "",
     foot: `Dato al ${fDia(u.f)}`,
     pts: serie, o: { fmt: (v) => `${num(v, 0)} pb`, fmtAxis: (v) => num(v, 0) },
   });
@@ -1293,11 +1289,7 @@ async function refrescoRapido() {
 let ultimaCompleta = null, ultimaRapida = null;
 function estadoMacro() {
   const h = (d) => d ? d.toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
-  const vivo = store.get("cgr_token")
-    ? "<b>En vivo:</b> MEP y CCL, con cada operación."
-    : "<b>MEP y CCL en vivo:</b> entrá con tu token en la pestaña Mercado.";
-  $("macroEstado").innerHTML = `${vivo} <b>Cada minuto:</b> blue y riesgo país (${h(ultimaRapida)}). `
-    + `<b>Cada 10 minutos:</b> el resto (${h(ultimaCompleta)}), que se publica una vez por día o por mes.`;
+  $("macroEstado").textContent = `Actualizado a las ${h(ultimaRapida || ultimaCompleta)}.`;
 }
 
 $("macroRefresh").addEventListener("click", cargarMacro);
@@ -1571,8 +1563,6 @@ function pintarEP() {
     return { name: t, color: colorBanco(t), vals: xs.map((_, i) => esNum(roes[i]) && esNum(pbv[i]) && pbv[i] > 0 ? roes[i] / pbv[i] : null) };
   });
   chart(el, [], { label: "ROE / (P/BV)", multi: { xs, series }, h: 240, fmt: P1, fmtAxis: (v) => pct(v, 0) });
-  $("epNota").innerHTML = `ROE / (P/BV): lo que gana el banco por cada peso que pagás por la acción (la inversa del P/E). `
-    + `El último punto usa el ROE del último trimestre y el P/BV con precio actual, con el libro ${textoIPC()}.`;
 }
 
 /* ---------- Market cap contra patrimonio ---------- */
@@ -1693,10 +1683,6 @@ function pintarCapBook() {
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
   chart($("capChart"), [], { draw: dibujarCapBook });
   document.querySelectorAll("#capRangos button").forEach(b => b.classList.toggle("on", +b.dataset.r === CB.rango));
-  $("capNota").innerHTML = `Market cap: precio × acciones en circulación / CCL implícito del AL30. Patrimonio: libro por acción del último balance ya publicado de cada banco, ajustado por IPC hasta cada día, × acciones / CCL. `
-    + `Cada banco cambia de libro recién la rueda siguiente a publicar su balance`
-    + (CB.estimadas ? `; ${CB.estimadas} fecha${CB.estimadas > 1 ? "s" : ""} sin dato se estima${CB.estimadas > 1 ? "n" : ""} a 70 días del cierre` : "") + `. `
-    + `Las dos líneas suman solo los bancos con balance publicado; en "Todo" hay saltos cuando entra uno (marcas "+"). El patrimonio en dólares también se mueve con el tipo de cambio real.`;
 }
 
 function dibujarCapBook(el) {
@@ -1895,9 +1881,6 @@ function pintarIntra() {
   for (const el of cont.querySelectorAll(".chart")) chart(el, [], { draw: (e) => dibujarIntra(e, el.dataset.b) });
   const vivo = B.bancos.some(b => state[`${b} - 24hs`]?.LA?.price);
   const ult = IR ? Math.max(...Object.values(IR.b).map(x => x.velas.at(-1)?.t ?? 0)) : null;
-  $("intraNota").innerHTML = (IR ? `Velas de 15 minutos hasta las ${hhmm(ult)} (se actualizan solas cada 15 minutos durante la rueda). ` : `Todavía no hay velas de hoy: aparecen con la rueda abierta (10:30 a 17:00). `)
-    + `Los últimos minutos se completan en tu navegador ${vivo ? "con cada operación" : "con una lectura por minuto (con tu token entra cada operación)"}. `
-    + `Línea punteada: VWAP del día (precio promedio ponderado por volumen, acumulado desde la apertura). Volumen en pesos.`;
 }
 
 /* ---------- Perfil de volumen ---------- */
@@ -2000,9 +1983,6 @@ function pintarPerfil() {
     chart(el, [], { draw: (e) => dibujarPerfil(e, b) });
   }
   document.querySelectorAll("#perfilRangos button").forEach(x => x.classList.toggle("on", +x.dataset.n === PF.n));
-  $("perfilNota").innerHTML = `Volumen operado en cada nivel de precio${ruedas > 1 ? `, sumando las últimas ${ruedas} ruedas${desde ? ` (desde el ${fDia(desde)})` : ""}` : ", en la rueda de hoy"}. `
-    + `<b>POC</b>: el nivel con más volumen. <b>Zona de valor</b> (en color): los niveles alrededor del POC donde se operó el 70%. Línea ámbar: precio actual. `
-    + `Se arma con velas de 15 minutos, repartiendo el volumen de cada vela en forma pareja entre su mínimo y su máximo: los niveles son una buena aproximación, no un dato exacto por operación.`;
 }
 document.querySelectorAll("#perfilRangos button").forEach(x => x.addEventListener("click", () => {
   PF.n = +x.dataset.n; store.set("perfil_n", String(PF.n)); pintarPerfil();
@@ -2112,7 +2092,7 @@ async function cargarBancos() {
     const vivo = store.get("cgr_token") ? "Precios en vivo."
       : Object.keys(PX).length ? "Precios cada minuto. Con tu token (pestaña Mercado) van en vivo."
       : "Sin precios de hoy: se usan los del último balance.";
-    $("bancosEstado").textContent = `${leida} ${vivo}`;
+    $("bancosEstado").textContent = leida;
   } catch (e) {
     console.error(e);
     $("bancosBody").hidden = !B.cargado;
@@ -2483,11 +2463,7 @@ function pintarLegislacion() {
   const ult = L.pares["30"]?.serie.at(-1)?.f;
   const vivo = LEG_PARES.some(([, a]) => precioLeg(a)?.fuente === "cgr") ? "Precios de hoy en vivo."
     : Object.keys(L.vivo).length ? "Precios de hoy cada minuto. Con tu token van en vivo." : "Sin precio de hoy: se muestra el último cierre.";
-  $("legEstado").textContent = `Historia hasta el ${ult ? fDia(ult) : "—"}. ${vivo}`;
-  $("legNota").innerHTML = `TIR calculada con los flujos completos de cada bono. `
-    + `Volumen: participación del GD en el volumen del par en pesos; lo que importa es cómo cambia, no el nivel (en el tramo 30 el AL concentra casi todo el volumen). `
-    + `Líneas punteadas: elecciones del 7-sep (PBA) y del 26-oct de 2025. `
-    + (L.corregidos ? `Se corrigieron ${L.corregidos} cierres que caían fuera del rango del día (se usó el punto medio del rango).` : "");
+  $("legEstado").textContent = `Datos hasta el ${ult ? fDia(ult) : "—"}.`;
 }
 
 let legPendiente = false;
