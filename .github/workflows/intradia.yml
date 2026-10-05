@@ -1,11 +1,11 @@
 name: Intradía de bancos
 
 # Baja las velas de 15 minutos de hoy (CGR) y las guarda en data/intradia.json.
-# Corre cada 15 minutos durante la rueda: 10:30 a 17:15 de Buenos Aires = 13:30 a 20:15 UTC,
-# de lunes a viernes. GitHub puede demorar unos minutos cada corrida.
+# Corre cada 15 minutos durante la rueda (10:30 a 17:15 de Buenos Aires = 13:30 a 20:15 UTC), de lunes
+# a viernes. Los minutos 4/19/34/49 evitan los de más carga en GitHub, que demora o saltea tareas a los :00/:15.
 on:
   schedule:
-    - cron: "*/15 13-20 * * 1-5"
+    - cron: "4,19,34,49 13-20 * * 1-5"
   workflow_dispatch:
 
 permissions:
