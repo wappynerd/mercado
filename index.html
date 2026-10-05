@@ -1951,7 +1951,12 @@ function dibujarPerfil(el, b) {
   g += et((y(poc.p0) + y(poc.p1)) / 2, `POC ${num((poc.p0 + poc.p1) / 2, dec)}`, "var(--text)");
   // Precio actual
   const pr = precioBanco(b);
-  if (pr && pr.p >= lo && pr.p <= hi) g += `<line x1="${L_}" x2="${W - R}" y1="${y(pr.p)}" y2="${y(pr.p)}" style="stroke:var(--accent);stroke-dasharray:4 3"/>` + et(y(pr.p) - 7, num(pr.p, 0), "var(--accent)");
+  if (pr) {
+    // Fuera del rango del perfil, la línea queda en el borde con una flecha hacia donde salió.
+    const fuera = pr.p > hi ? "▲ " : pr.p < lo ? "▼ " : "", yp = y(Math.min(hi, Math.max(lo, pr.p)));
+    g += `<line x1="${L_}" x2="${W - R}" y1="${yp}" y2="${yp}" style="stroke:var(--accent);stroke-dasharray:4 3"/>`
+      + et(pr.p < lo ? yp - 7 : pr.p > hi ? yp + 11 : yp - 7, fuera + num(pr.p, dec), "var(--accent)");
+  }
   g += `</svg><div class="tip" hidden></div>`;
   el.innerHTML = g;
 
@@ -2006,6 +2011,7 @@ function bancosEnVivo() {
     bancosPendiente = false;
     pintarTarjetasBancos();
     pintarIntra();
+    pintarPerfil();   // la línea del precio actual y el volumen de hoy, con cada operación
     pintarEP();
     pintarCapBook();
     if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
