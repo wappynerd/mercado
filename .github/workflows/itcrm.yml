@@ -1,7 +1,7 @@
 name: Actualizar ITCRM
 
 # Baja el ITCRM diario del BCRA y lo guarda en data/itcrm.json.
-# Corre de lunes a viernes a las 21:30 de Buenos Aires (00:30 UTC del día siguiente),
+# Corre de lunes a viernes a las 21:17 de Buenos Aires (00:17 UTC del día siguiente),
 # después de que el BCRA publica, y también se puede lanzar a mano.
 on:
   schedule:
