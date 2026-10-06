@@ -174,6 +174,17 @@
   #paresTable tr.pais td:first-child { letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
   #paresTable tr.ar td { color: #fff; }
   #paresTable td.nom { color: var(--muted); font-size: 11px; }
+  #secTabla th:first-child, #secTabla td:first-child { width: auto; }
+  #secTabla th[data-p] { cursor: pointer; }
+  #secTabla th.on { color: var(--accent); }
+  #secTabla tr.sector { cursor: pointer; }
+  #secTabla tr.sector td:first-child { color: var(--text); font-weight: 600; }
+  #secTabla tr.sector td:first-child::before { content: "▸ "; color: var(--muted); }
+  #secTabla tr.sector.abierto td:first-child::before { content: "▾ "; }
+  #secTabla tr.total td { color: var(--accent); font-weight: 700; background: var(--panel2); }
+  #secTabla tr.esp td:first-child { padding-left: 28px; }
+  #secTabla tr.esp td { font-size: 12px; }
+  #secTabla td.heat { color: #fff; }
   .rangos { display: inline-flex; }
   .rangos button { padding: 9px 10px; margin-left: -1px; }
   .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
@@ -199,6 +210,7 @@
       <button type="button" role="tab" data-tab="macro"><kbd>2</kbd>Macro</button>
       <button type="button" role="tab" data-tab="bancos"><kbd>3</kbd>Bancos</button>
       <button type="button" role="tab" data-tab="legislacion"><kbd>4</kbd>Legislación</button>
+      <button type="button" role="tab" data-tab="sectores"><kbd>5</kbd>Sectores</button>
     </nav>
     <div class="clock">
       <span>BA <span class="num" id="reloj">--:--</span></span>
@@ -370,6 +382,31 @@
       
     </div>
   </div>
+
+  <!-- ========================== SECTORES ========================== -->
+  <div id="tab-sectores" hidden>
+    <div class="macro-bar">
+      <div class="intro">
+        <h2>Sectores</h2>
+        <p id="secEstado">Cargando…</p>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <span class="rangos" id="secMoneda"><button type="button" class="ghost" data-m="ars">Pesos</button><button type="button" class="ghost" data-m="usd">Dólar CCL</button></span>
+        <button type="button" class="ghost" id="secRefresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="card err-card" id="secError" hidden></div>
+    <div id="secBody" hidden>
+      <div class="headlines" id="secStrip"></div>
+
+      <div class="sec"><h2>Rendimiento por sector</h2></div>
+      <div class="toolbar"><span class="rangos" id="secPeriodos"><button type="button" class="ghost" data-p="1D">1D</button><button type="button" class="ghost" data-p="1S">1S</button><button type="button" class="ghost" data-p="1M">1M</button><button type="button" class="ghost" data-p="YTD">YTD</button></span></div>
+      <article class="card mcard"><div class="chart" id="secBarras"></div></article>
+
+      <div class="sec"><h2>Mapa de rendimientos</h2></div>
+      <div class="card table-wrap"><table class="btable" id="secTabla"></table></div>
+    </div>
+  </div>
 </main>
 
 <footer>
@@ -500,8 +537,23 @@ function setStatus(kind, text) {
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
 // Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
 let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
+// Pestaña Sectores: especies por sector. PAMP va en generación (aunque hoy pesa más su petróleo).
+const SECTORES = [
+  ["Bancos", ["GGAL", "BMA", "BBAR", "SUPV", "BPAT", "VALO", "BHIP"]],
+  ["Servicios financieros", ["BYMA", "A3"]],
+  ["Petróleo", ["YPFD", "CAPX"]],
+  ["Gas", ["TGSU2", "TGNO4", "ECOG", "METR", "GBAN", "DGCU2", "CGPA2"]],
+  ["Generación eléctrica", ["PAMP", "CEPU", "CECO2"]],
+  ["Transporte y distribución eléctrica", ["TRAN", "EDN"]],
+  ["Materiales", ["TXAR", "ALUA", "LOMA", "HARG", "CELU", "FERR", "FIPL", "CARC"]],
+  ["Telecomunicaciones y medios", ["TECO2", "CVH", "GCLA"]],
+  ["Agro y alimentos", ["CRES", "MOLA", "MOLI", "LEDE", "SAMI", "AGRO", "MORI", "SEMI"]],
+  ["Real estate", ["IRSA", "CTIO", "GCDI"]],
+  ["Consumo, industria y otros", ["MIRG", "PATA", "COME", "BOLT", "RICH", "GRIM", "HAVA", "LONG", "AUSO", "OEST"]],
+];
+const SECT_SYMS = SECTORES.flatMap(([, ts]) => ts).map(t => `${t} - 24hs`);
 const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs", "AL30C - 24hs"];
-const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS])];
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS, ...SECT_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
@@ -552,6 +604,7 @@ function recibir(sym, md, reemplazar) {
     bancosEnVivo();
   }
   if (LEG_SYMS.includes(sym)) legEnVivo();
+  if (SECT_SYMS.includes(sym)) secEnVivo();
 }
 
 function handle(msg) {
@@ -2690,10 +2743,219 @@ setInterval(async () => {
 let legPedida = false;
 
 /* ======================================================================= */
+/*  Sectores                                                               */
+/* ======================================================================= */
+//
+// Rendimiento de cada sector = market cap de hoy / market cap al inicio del período − 1, sumando sus
+// empresas (acciones totales × precio): un índice ponderado por market cap. En dólares, cada punta se
+// pasa a dólares con el CCL de su fecha. 1D contra el cierre anterior; 1S, 1M y YTD contra el último
+// cierre a 7 días, a un mes y al 31 de diciembre.
+const SC = { d: null, per: "1D", mon: store.get("sec_mon") || "ars", abiertos: new Set(), cargado: false };
+const PERIODOS = ["1D", "1S", "1M", "YTD"];
+
+async function cargarSectores() {
+  $("secEstado").textContent = "Cargando…";
+  try {
+    const [d] = await Promise.all([
+      getJSON(`data/sectores.json?t=${Math.floor(Date.now() / 3600000)}`),
+      preciosPublicos().catch(e => console.error("data912", e)),
+      preciosLeg().catch(e => console.error("data912 bonos", e)),
+    ]);
+    const hoyF = hoy();
+    // Cierres anteriores a hoy (el de hoy es el precio en vivo).
+    SC.d = {
+      acc: d.acciones,
+      c: Object.fromEntries(Object.entries(d.cierres).map(([t, v]) => [t, v.filter(([f]) => f < hoyF)])),
+      ccl: d.ccl.filter(([f]) => f < hoyF),
+    };
+    SC.cargado = true;
+    $("secError").hidden = true;
+    $("secBody").hidden = false;
+    pintarSectores();
+    $("secEstado").textContent = `Datos al ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}.`;
+  } catch (e) {
+    console.error("sectores", e);
+    $("secError").hidden = false;
+    $("secError").innerHTML = `<h3>No se pudieron cargar los sectores</h3><p>${e.message}</p>`;
+    $("secEstado").textContent = "";
+  }
+}
+
+// Último valor de una serie [[fecha, v]] en o antes de f.
+function valorAl(serie, f) {
+  let lo = 0, hi = serie.length - 1, r = null;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (serie[m][0] <= f) { r = serie[m][1]; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+
+function fechaRef(per) {
+  const d = new Date(`${hoy()}T12:00:00`);
+  if (per === "1S") d.setDate(d.getDate() - 7);
+  else if (per === "1M") d.setMonth(d.getMonth() - 1);
+  else if (per === "YTD") return `${d.getFullYear() - 1}-12-31`;
+  return isoLocal(d);
+}
+
+// Precio de ahora y cierre de referencia de una especie para el período.
+function puntasEspecie(t, per) {
+  const md = state[`${t} - 24hs`], c = SC.d.c[t] || [];
+  const ahora = md?.LA?.price || PX[t]?.p || c.at(-1)?.[1];
+  if (!ahora) return null;
+  let ref;
+  if (per === "1D") ref = md?.LA?.price && md.CL?.price ? md.CL.price
+    : PX[t] && PX[t].var1 != null ? PX[t].p / (1 + PX[t].var1) : c.at(-2)?.[1];
+  else ref = valorAl(c, fechaRef(per));
+  return ref ? { ahora, ref } : null;
+}
+
+function cclAhora() {
+  const a = precioLeg("AL30"), c = precioLeg("AL30C");
+  return a && c ? a.p / c.p : SC.d.ccl.at(-1)?.[1];
+}
+// CCL de referencia: para 1D, el del último cierre; si no, el del día de referencia.
+const cclRef = (per) => per === "1D" ? SC.d.ccl.at(-1)?.[1] : valorAl(SC.d.ccl, fechaRef(per));
+
+// Rendimiento de un grupo de especies (o de una sola): índice ponderado por market cap.
+function rendimiento(ts, per) {
+  let ahora = 0, ref = 0;
+  for (const t of ts) {
+    const a = SC.d.acc[t], p = a && puntasEspecie(t, per);
+    if (!p) continue;
+    ahora += a * p.ahora; ref += a * p.ref;
+  }
+  if (!ref) return null;
+  let r = ahora / ref - 1;
+  if (SC.mon === "usd") { const c0 = cclRef(per), c1 = cclAhora(); r = c0 && c1 ? (1 + r) * c0 / c1 - 1 : null; }
+  return r;
+}
+
+function mcUSD(ts) {
+  const c = cclAhora();
+  let s = 0;
+  for (const t of ts) { const a = SC.d.acc[t], p = puntasEspecie(t, "1D")?.ahora ?? SC.d.c[t]?.at(-1)?.[1]; if (a && p) s += a * p; }
+  return c && s ? s / c / 1e6 : null;
+}
+
+function filasSectores() {
+  const todas = SECTORES.flatMap(([, ts]) => ts);
+  const fila = (nombre, ts) => ({ nombre, ts, mc: mcUSD(ts), r: Object.fromEntries(PERIODOS.map(p => [p, rendimiento(ts, p)])) });
+  return { total: fila("Total", todas), sectores: SECTORES.map(([n, ts]) => fila(n, ts)) };
+}
+
+const fmtR = (v) => v == null ? "—" : `${v >= 0 ? "+" : "−"}${num(Math.abs(v) * 100, Math.abs(v) < 0.1 ? 2 : 1)}%`;
+
+function pintarSectores() {
+  if (!SC.cargado) return;
+  const { total, sectores } = filasSectores(), per = SC.per;
+  const orden = [...sectores].sort((a, b) => (b.r[per] ?? -9) - (a.r[per] ?? -9));
+  const con = orden.filter(x => x.r[per] != null), mejor = con[0], peor = con.at(-1);
+  const nomPer = { "1D": "en el día", "1S": "en la semana", "1M": "en el mes", "YTD": "en el año" }[per];
+  $("secStrip").innerHTML = [
+    ["Total", `<span class="num">${fmtR(total.r[per])}</span> ${nomPer}${SC.mon === "usd" ? " en dólares" : ""}. Market cap US$ ${num(total.mc)} M.`],
+    ["Mejor sector", mejor ? `<span class="num">${mejor.nombre}</span> ${fmtR(mejor.r[per])}.` : "—"],
+    ["Peor sector", peor ? `<span class="num">${peor.nombre}</span> ${fmtR(peor.r[per])}.` : "—"],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+
+  chart($("secBarras"), [], { draw: (el) => dibujarBarrasSect(el, orden, total) });
+
+  // Mapa: cada celda se pinta según su rendimiento, con la escala de su columna.
+  const escala = Object.fromEntries(PERIODOS.map(p => [p, Math.max(0.005, ...sectores.flatMap(x => x.r[p] == null ? [] : [Math.abs(x.r[p])]))]));
+  const celda = (v, p, k = 1) => {
+    if (v == null) return `<td class="na">—</td>`;
+    const a = Math.min(1, Math.abs(v) / escala[p]) * 0.5 * k;
+    return `<td class="heat" style="background:${v >= 0 ? `rgba(30,212,124,${a.toFixed(3)})` : `rgba(255,77,94,${a.toFixed(3)})`}">${fmtR(v)}</td>`;
+  };
+  let h = `<thead><tr><th>Sector</th><th>Market cap US$ M</th>${PERIODOS.map(p => `<th data-p="${p}" class="${p === per ? "on" : ""}">${p}${p === per ? " ▾" : ""}</th>`).join("")}</tr></thead><tbody>`;
+  h += `<tr class="total"><td>Total</td><td>${num(total.mc)}</td>${PERIODOS.map(p => celda(total.r[p], p)).join("")}</tr>`;
+  for (const x of orden) {
+    const ab = SC.abiertos.has(x.nombre);
+    h += `<tr class="sector${ab ? " abierto" : ""}" data-s="${x.nombre}"><td>${x.nombre}</td><td>${num(x.mc)}</td>${PERIODOS.map(p => celda(x.r[p], p)).join("")}</tr>`;
+    if (!ab) continue;
+    const esp = x.ts.map(t => ({ t, mc: mcUSD([t]), r: Object.fromEntries(PERIODOS.map(p => [p, rendimiento([t], p)])) }))
+      .filter(e => e.mc).sort((a, b) => b.mc - a.mc);
+    for (const e of esp) h += `<tr class="esp"><td>${e.t}</td><td>${num(e.mc)}</td>${PERIODOS.map(p => celda(e.r[p], p, 0.7)).join("")}</tr>`;
+  }
+  $("secTabla").innerHTML = h + "</tbody>";
+  document.querySelectorAll("#secPeriodos button").forEach(b => b.classList.toggle("on", b.dataset.p === per));
+  document.querySelectorAll("#secMoneda button").forEach(b => b.classList.toggle("on", b.dataset.m === SC.mon));
+}
+
+// Barras horizontales ordenadas, con el total como línea vertical ámbar.
+function dibujarBarrasSect(el, orden, total) {
+  if (!el.clientWidth) return;
+  const per = SC.per, filas = orden.filter(x => x.r[per] != null);
+  if (!filas.length) { el.innerHTML = `<p class="hint">Sin datos para el período.</p>`; return; }
+  const W = el.clientWidth, fila = 30, T = 22, B_ = 22, H = T + B_ + filas.length * fila;
+  const L = Math.min(290, W * 0.42), R = 64, pw = W - L - R;
+  const vals = filas.map(x => x.r[per]).concat(total.r[per] ?? []);
+  // Margen a cada lado para que el valor de la punta de la barra no pise los nombres.
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), pad = (hi - lo) * 0.04 || 0.01;
+  const a = lo < 0 ? lo - (hi - lo) * 0.16 : 0, b = hi > 0 ? hi + (hi - lo) * 0.12 : 0;
+  const x = (v) => L + (v - a) / (b - a) * pw;
+  const tk = niceTicks(lo, hi).filter(t => t >= a && t <= b);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Rendimiento por sector">`;
+  for (const t of tk) s += `<line class="gl" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B_}"/><text class="ax" x="${x(t)}" y="${H - 6}" text-anchor="middle">${pct(t, Math.abs(hi - lo) < 0.05 ? 1 : 0)}</text>`;
+  s += `<line class="zero" x1="${x(0)}" x2="${x(0)}" y1="${T}" y2="${H - B_}"/>`;
+  filas.forEach((f, i) => {
+    const v = f.r[per], yc = T + i * fila + fila / 2, x0 = x(0), x1 = x(v), c = v >= 0 ? "var(--up)" : "var(--down)";
+    s += `<text x="${L - 10}" y="${yc + 4}" text-anchor="end" style="fill:var(--text);font:500 12px var(--mono)">${f.nombre}</text>`;
+    s += `<rect x="${Math.min(x0, x1)}" y="${yc - 9}" width="${Math.max(1, Math.abs(x1 - x0))}" height="18" style="fill:${c};opacity:.8"/>`;
+    s += `<text x="${v >= 0 ? x1 + 6 : x1 - 6}" y="${yc + 4}" text-anchor="${v >= 0 ? "start" : "end"}" style="fill:${c};font:600 11px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${fmtR(v)}</text>`;
+  });
+  if (total.r[per] != null) {
+    const xt = x(total.r[per]);
+    s += `<line x1="${xt}" x2="${xt}" y1="${T - 4}" y2="${H - B_}" style="stroke:#ffb000;stroke-width:1.2;stroke-dasharray:4 3"/>`
+      + `<text x="${xt}" y="${T - 8}" text-anchor="middle" style="fill:#ffb000;font:600 10px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">TOTAL ${fmtR(total.r[per])}</text>`;
+  }
+  s += `</svg><div class="tip" hidden></div>`;
+  el.style.height = `${H}px`;
+  el.innerHTML = s;
+  // Tooltip: las empresas del sector con su rendimiento del período.
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const i = Math.floor((e.clientY - svg.getBoundingClientRect().top - T) / fila);
+    const f = filas[i];
+    if (!f) { tip.hidden = true; return; }
+    const esp = f.ts.map(t => ({ t, mc: mcUSD([t]), r: rendimiento([t], per) })).filter(z => z.mc && z.r != null).sort((p, q) => q.mc - p.mc);
+    tip.innerHTML = `<b>${f.nombre}</b> <span class="muted">${per}</span> <b>${fmtR(f.r[per])}</b>`
+      + esp.map(z => `<br>${z.t} <span style="color:${z.r >= 0 ? "var(--up)" : "var(--down)"}">${fmtR(z.r)}</span> <span class="muted">· US$ ${num(z.mc)} M</span>`).join("");
+    tip.hidden = false;
+    tip.style.top = `${Math.max(4, Math.min(H - tip.offsetHeight - 4, T + i * fila + fila))}px`;
+    ubicarTip(tip, x(f.r[per]), W);
+  };
+  el.onpointerleave = () => { tip.hidden = true; };
+}
+
+let secPendiente = false;
+function secEnVivo() {
+  if (!SC.cargado || secPendiente || tab !== "sectores") return;
+  secPendiente = true;
+  requestAnimationFrame(() => { secPendiente = false; pintarSectores(); });
+}
+
+document.querySelectorAll("#secPeriodos button").forEach(b => b.addEventListener("click", () => { SC.per = b.dataset.p; pintarSectores(); }));
+document.querySelectorAll("#secMoneda button").forEach(b => b.addEventListener("click", () => { SC.mon = b.dataset.m; store.set("sec_mon", SC.mon); pintarSectores(); }));
+$("secTabla").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-p]");
+  if (th) { SC.per = th.dataset.p; pintarSectores(); return; }
+  const tr = e.target.closest("tr.sector");
+  if (!tr) return;
+  SC.abiertos.has(tr.dataset.s) ? SC.abiertos.delete(tr.dataset.s) : SC.abiertos.add(tr.dataset.s);
+  pintarSectores();
+});
+$("secRefresh").addEventListener("click", cargarSectores);
+// Sin feed de CGR, los precios se refrescan cada minuto desde Data912.
+setInterval(async () => {
+  if (!SC.cargado || tab !== "sectores" || document.visibilityState !== "visible") return;
+  try { await Promise.all([preciosPublicos(), preciosLeg()]); secEnVivo(); } catch (e) { console.error("data912", e); }
+}, 60 * 1000);
+let secPedida = false;
+
+/* ======================================================================= */
 /*  Pestañas                                                               */
 /* ======================================================================= */
 
-const TABS = ["mercado", "macro", "bancos", "legislacion"];
+const TABS = ["mercado", "macro", "bancos", "legislacion", "sectores"];
 let tab = null;
 
 function setTab(t) {
@@ -2704,6 +2966,8 @@ function setTab(t) {
   history.replaceState(null, "", "#" + t);
   redibujar();   // los gráficos no se dibujan mientras su pestaña está oculta
   if (t === "legislacion" && !legPedida) { legPedida = true; cargarLegislacion(); }
+  if (t === "sectores" && !secPedida) { secPedida = true; cargarSectores(); }
+  if (t === "sectores") secEnVivo();
 }
 
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
