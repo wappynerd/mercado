@@ -2865,9 +2865,10 @@ function pintarSectores() {
     const a = Math.min(1, Math.abs(v) / escala[p]) * 0.5 * k;
     return `<td class="heat" style="background:${v >= 0 ? `rgba(30,212,124,${a.toFixed(3)})` : `rgba(255,77,94,${a.toFixed(3)})`}">${fmtR(v)}</td>`;
   };
-  let h = `<thead><tr><th>Sector</th><th>Market cap US$ M</th>${PERIODOS.map(p => `<th data-p="${p}" class="${p === per ? "on" : ""}">${p}${p === per ? " ▾" : ""}</th>`).join("")}</tr></thead><tbody>`;
+  // Ordenado por market cap; el período elegido se marca en su columna.
+  let h = `<thead><tr><th>Sector</th><th>Market cap US$ M ▾</th>${PERIODOS.map(p => `<th data-p="${p}" class="${p === per ? "on" : ""}">${p}</th>`).join("")}</tr></thead><tbody>`;
   h += `<tr class="total"><td>Total</td><td>${num(total.mc)}</td>${PERIODOS.map(p => celda(total.r[p], p)).join("")}</tr>`;
-  for (const x of orden) {
+  for (const x of [...sectores].sort((a, b) => (b.mc ?? 0) - (a.mc ?? 0))) {
     const ab = SC.abiertos.has(x.nombre);
     h += `<tr class="sector${ab ? " abierto" : ""}" data-s="${x.nombre}"><td>${x.nombre}</td><td>${num(x.mc)}</td>${PERIODOS.map(p => celda(x.r[p], p)).join("")}</tr>`;
     if (!ab) continue;
