@@ -169,6 +169,11 @@
 
   .btable tr.grp th { text-align: center; color: var(--accent); border-bottom: 0; padding-bottom: 0; background: var(--panel2); }
   #legTable th:first-child, #legTable td:first-child { width: auto; }
+  #paresTable th:first-child, #paresTable td:first-child { width: auto; }
+  #paresTable tr.pais td { color: var(--accent); font-weight: 700; border-top: 1px solid var(--border); background: var(--panel2); }
+  #paresTable tr.pais td:first-child { letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
+  #paresTable tr.ar td { color: #fff; }
+  #paresTable td.nom { color: var(--muted); font-size: 11px; }
   .rangos { display: inline-flex; }
   .rangos button { padding: 9px 10px; margin-left: -1px; }
   .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
@@ -291,7 +296,17 @@
         <div class="toolbar" style="margin:8px 0 0"><span class="rangos" id="capRangos"><button type="button" class="ghost" data-r="-1">Con los 4 bancos</button><button type="button" class="ghost" data-r="182">6M</button><button type="button" class="ghost" data-r="365">1A</button><button type="button" class="ghost" data-r="0">Todo</button></span></div>
         <div class="chart" id="capChart" style="height:400px"><p class="hint">Bajando la historia de precios…</p></div>
       </article>
-      
+
+
+      <div class="sec"><h2>Contra la región</h2></div>
+      <div class="headlines" id="paresKpis" style="margin-top:0"></div>
+      <article class="card mcard" style="margin-top:8px">
+        <div class="mhead"><h3>ROE contra P/BV · tamaño = market cap</h3>
+          <span class="legend" style="margin:0" id="paresLeyenda"></span></div>
+        <div class="chart" id="paresChart" style="height:420px"><p class="hint">Cargando comparables…</p></div>
+      </article>
+      <div class="card table-wrap" style="margin-top:8px"><table class="btable" id="paresTable"></table></div>
+
 
       <div class="sec"><h2>Tablero</h2></div>
       <div class="legend" id="bankLegend"></div>
@@ -1644,6 +1659,7 @@ async function cargarCapBook() {
 
   CB.hist = fechas.map(f => filaCapBook(f, (b) => P[b].get(f), CCL.get(f))).filter(r => r.n);
   pintarCapBook();
+  pintarPares();
 }
 
 // Una fila del gráfico: market cap y patrimonio de los bancos con balance publicado a esa fecha.
@@ -1739,6 +1755,152 @@ function dibujarCapBook(el) {
 }
 
 document.querySelectorAll("#capRangos button").forEach(b => b.addEventListener("click", () => { CB.rango = +b.dataset.r; pintarCapBook(); }));
+
+/* ---------- Contra la región ---------- */
+//
+// Bancos comparables de Brasil, Colombia, Perú, Chile y México: data/pares.json, que arma una tarea
+// diaria de GitHub Actions (scripts/pares.py). ROE = ganancia del último trimestre anualizada; P/BV y
+// market cap en una sola moneda. Los argentinos salen de la planilla con el precio de ahora.
+const PAISES = { AR: "Argentina", BR: "Brasil", CO: "Colombia", PE: "Perú", CL: "Chile", MX: "México" };
+const PARES = { d: null };
+
+async function cargarPares() {
+  try { PARES.d = await getJSON(`data/pares.json?t=${hoy()}`); } catch (e) { console.error("pares", e); PARES.d = null; }
+  pintarPares();
+}
+
+// Los cuatro argentinos, con el precio actual: market cap de la serie de arriba (hoy, si hay precios).
+function paresArgentinos() {
+  const s = CB.hist?.length ? serieCapBook() : null, u = s?.at(-1), h1 = s?.find(r => r.f >= haceDias(365));
+  return B.bancos.map(t => {
+    const ul = ultimo(t), pb = pbvHoy(t);
+    if (!ul || !esNum(pb?.pbv) || !esNum(u?.caps[t])) return null;
+    return { t, n: "", p: "AR", mc: u.caps[t], pbv: pb.pbv, roe: ul.ROE, q: ul.trimestre,
+             var1a: esNum(h1?.caps[t]) ? u.caps[t] / h1.caps[t] - 1 : null, ar: true };
+  }).filter(Boolean);
+}
+
+// Agregado ponderado por market cap: P/BV = Σ market cap / Σ patrimonio; ROE ponderado por patrimonio.
+function agregar(xs) {
+  const mc = xs.reduce((a, x) => a + x.mc, 0), bv = xs.reduce((a, x) => a + x.mc / x.pbv, 0);
+  const conR = xs.filter(x => esNum(x.roe)), bvR = conR.reduce((a, x) => a + x.mc / x.pbv, 0);
+  const conV = xs.filter(x => esNum(x.var1a)), mcV = conV.reduce((a, x) => a + x.mc, 0);
+  const roe = bvR ? conR.reduce((a, x) => a + x.roe * x.mc / x.pbv, 0) / bvR : null;
+  return { mc, pbv: mc / bv, roe, var1a: mcV ? conV.reduce((a, x) => a + x.var1a * x.mc, 0) / mcV : null };
+}
+
+function pintarPares() {
+  const el = $("paresChart");
+  if (!el) return;
+  const ar = paresArgentinos(), pares = PARES.d?.bancos || [];
+  if (!pares.length || !ar.length) {
+    if (PARES.d === null && !el.querySelector("svg")) el.innerHTML = `<p class="hint">Cargando comparables…</p>`;
+    return;
+  }
+  const todos = [...ar, ...pares];
+  const grupos = Object.keys(PAISES).map(p => ({ p, xs: todos.filter(x => x.p === p).sort((a, b) => b.mc - a.mc) })).filter(g => g.xs.length);
+  grupos.forEach(g => Object.assign(g, agregar(g.xs)));
+  const [gAR, ...resto] = grupos;
+  resto.sort((a, b) => b.mc - a.mc);
+  const reg = agregar(pares);
+  const ep = (x) => esNum(x.roe) && x.pbv > 0 ? x.roe / x.pbv : null;
+
+  const dif = (a, b) => `<span class="num">${a}</span> contra <span class="num">${b}</span> de la región`;
+  $("paresKpis").innerHTML = [
+    ["P/BV", `${dif(`${num(gAR.pbv, 2)}x`, `${num(reg.pbv, 2)}x`)}: ${gAR.pbv < reg.pbv ? "descuento" : "prima"} de ${pct(Math.abs(gAR.pbv / reg.pbv - 1), 0)}.`],
+    ["ROE", `${dif(pct(gAR.roe, 1), pct(reg.roe, 1))}.`],
+    ["ROE / (P/BV)", `${dif(pct(ep(gAR), 1), pct(ep(reg), 1))}.`],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+
+  $("paresLeyenda").innerHTML = ar.map(x => `<span><span class="swatch" style="--c:${colorBanco(x.t)}"></span>${x.t}</span>`).join("")
+    + `<span><span class="swatch" style="--c:#7d8796"></span>Región</span><span><span class="swatch" style="--c:transparent;outline:1px solid #ffb000"></span>Promedio país</span>`;
+  chart(el, [], { draw: (e) => dibujarPares(e, todos, grupos) });
+
+  const fila = (x, cls, nombre) => `<tr class="${cls}"><td>${nombre}</td><td>${num(x.mc)}</td><td>${num(x.pbv, 2)}x</td><td>${pct(x.roe, 1)}</td>`
+    + `<td>${pct(ep(x), 1)}</td><td>${esNum(x.var1a) ? pill(x.var1a, pct(Math.abs(x.var1a), 0), 1) : "—"}</td><td class="nom">${x.q ? `${x.q[5]}T${x.q.slice(2, 4)}` : ""}</td></tr>`;
+  let h = `<thead><tr><th>Banco</th><th>Market cap US$ M</th><th>P/BV</th><th>ROE</th><th>ROE / (P/BV)</th><th>1 año en US$</th><th>Balance</th></tr></thead><tbody>`;
+  for (const g of [gAR, ...resto]) {
+    h += fila(g, "pais", PAISES[g.p]);
+    for (const x of g.xs) h += fila(x, x.ar ? "ar" : "", x.ar ? `<span class="swatch" style="--c:${colorBanco(x.t)}"></span>${x.t}` : `${x.t} <span class="nom">${x.n}</span>`);
+  }
+  h += fila(reg, "pais", "Región sin Argentina");
+  $("paresTable").innerHTML = h + "</tbody>";
+}
+
+function dibujarPares(el, todos, grupos) {
+  if (!el.clientWidth) return;
+  const W = el.clientWidth, H = 420, L = 46, R = 16, T = 14, B_ = 30, pw = W - L - R, ph = H - T - B_;
+  const tx = niceTicks(0, Math.max(...todos.map(x => x.roe).filter(esNum))), ty = niceTicks(0, Math.max(...todos.map(x => x.pbv)));
+  const xm = tx.at(-1), ym = ty.at(-1);
+  const x = (v) => L + Math.max(0, v) / xm * pw, y = (v) => T + ph - v / ym * ph;
+  const mcMax = Math.max(...todos.map(p => p.mc)), rad = (mc) => 3 + 11 * Math.sqrt(mc / mcMax);
+  const et = (px, py, c, t, peso) => `<text x="${px}" y="${py}" style="fill:${c};font:${peso} 10px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${t}</text>`;
+
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="ROE contra P/BV de los bancos de la región">`;
+  for (const t of ty) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${num(t, 1)}x</text>`;
+  for (const t of tx) s += `<text class="ax" x="${x(t)}" y="${T + ph + 14}" text-anchor="middle">${pct(t, 0)}</text>`;
+  s += `<text class="ax" x="${W - R}" y="${H - 3}" text-anchor="end">ROE →</text><text class="ax" x="${L}" y="${T - 3}" text-anchor="start">P/BV</text>`;
+  // Recta de la región (mínimos cuadrados, sin los argentinos), tenue: lo que paga el mercado por cada punto de ROE.
+  const reg = todos.filter(p => !p.ar && esNum(p.roe)), n = reg.length;
+  if (n > 2) {
+    const mx = reg.reduce((a, p) => a + p.roe, 0) / n, my = reg.reduce((a, p) => a + p.pbv, 0) / n;
+    const b = reg.reduce((a, p) => a + (p.roe - mx) * (p.pbv - my), 0) / reg.reduce((a, p) => a + (p.roe - mx) ** 2, 0), a0 = my - b * mx;
+    const x0 = Math.max(0, -a0 / b), x1 = Math.min(xm, (ym - a0) / b);
+    s += `<line x1="${x(x0)}" y1="${y(a0 + b * x0)}" x2="${x(x1)}" y2="${y(a0 + b * x1)}" style="stroke:var(--muted);stroke-dasharray:4 4;opacity:.6"/>`;
+  }
+  const pts = [];
+  for (const p of [...todos].sort((a, b) => b.mc - a.mc)) {   // los grandes abajo, los chicos arriba
+    if (!esNum(p.roe)) continue;
+    const px = x(p.roe), py = y(p.pbv), r = rad(p.mc), c = p.ar ? colorBanco(p.t) : "#7d8796";
+    s += `<circle cx="${px}" cy="${py}" r="${r}" style="fill:${c};fill-opacity:${p.ar ? .85 : .35};stroke:${c};stroke-width:1"/>`;
+    pts.push({ px, py, r, p });
+  }
+  // Promedio de cada país: cuadrado hueco, ámbar para Argentina.
+  const cuadros = [];
+  for (const g of grupos) {
+    if (!esNum(g.roe)) continue;
+    const px = x(g.roe), py = y(g.pbv), c = g.p === "AR" ? "#ffb000" : "#c9d1db";
+    s += `<rect x="${px - 5}" y="${py - 5}" width="10" height="10" style="fill:none;stroke:${c};stroke-width:1.5"/>`;
+    cuadros.push({ px, py, r: 6, c, p: { ...g, t: PAISES[g.p], n: "promedio ponderado", grupo: true } });
+  }
+  // Etiquetas: a la derecha de cada punto; si pisan otra, se corren arriba o abajo (primero las de los argentinos).
+  const ocupado = [], libre = (b) => b.x0 >= L && b.x1 <= W - R && ocupado.every(o => b.x1 < o.x0 || b.x0 > o.x1 || b.y1 < o.y0 || b.y0 > o.y1);
+  const etiquetas = [...cuadros.map(q => ({ ...q, txt: q.p.p, c: q.c, peso: 700 })),
+    ...pts.map(q => ({ ...q, txt: q.p.t, c: q.p.ar ? colorBanco(q.p.t) : "#9aa3b0", peso: q.p.ar ? 700 : 400 }))]
+    .sort((a, b) => (b.p.ar || b.p.p === "AR") - (a.p.ar || a.p.p === "AR"));
+  for (const q of etiquetas) {
+    const w = q.txt.length * 6.1 + 2;
+    for (const dy of [0, -12, 12, -24, 24, -36, 36]) {
+      for (const lado of [1, -1]) {
+        const x0 = lado > 0 ? q.px + q.r + 3 : q.px - q.r - 3 - w, b = { x0, x1: x0 + w, y0: q.py - 6 + dy, y1: q.py + 5 + dy };
+        if (!libre(b)) continue;
+        ocupado.push(b);
+        if (dy) s += `<line x1="${lado > 0 ? q.px + q.r : q.px - q.r}" y1="${q.py}" x2="${lado > 0 ? x0 : x0 + w}" y2="${q.py + dy}" style="stroke:${q.c};stroke-width:.6;opacity:.6"/>`;
+        s += et(x0, q.py + 3.5 + dy, q.c, q.txt, q.peso);
+        q.listo = true; break;
+      }
+      if (q.listo) break;
+    }
+  }
+  pts.push(...cuadros);
+  s += `</svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const b = svg.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top;
+    let m = null, dm = 1e9;
+    for (const q of pts) { const d = Math.hypot(q.px - mx, q.py - my) - q.r; if (d < dm) { dm = d; m = q; } }
+    if (!m || dm > 24) { tip.hidden = true; return; }
+    const p = m.p;
+    tip.innerHTML = `<b>${p.t}</b> <span class="muted">${p.grupo ? p.n : p.ar ? "Argentina" : `${p.n} · ${PAISES[p.p]}`}</span>`
+      + `<br>P/BV <b>${num(p.pbv, 2)}x</b> · ROE <b>${pct(p.roe, 1)}</b><br>ROE / (P/BV) <b>${pct(p.roe / p.pbv, 1)}</b> · US$ ${num(p.mc)} M`;
+    tip.hidden = false;
+    tip.style.top = `${Math.max(4, Math.min(H - tip.offsetHeight - 4, m.py - tip.offsetHeight - 10))}px`;
+    ubicarTip(tip, m.px, W);
+  };
+  el.onpointerleave = () => { tip.hidden = true; };
+}
 
 /* ---------- Intradía de los bancos ---------- */
 //
@@ -2014,6 +2176,7 @@ function bancosEnVivo() {
     pintarPerfil();   // la línea del precio actual y el volumen de hoy, con cada operación
     pintarEP();
     pintarCapBook();
+    pintarPares();
     if (B.dash.m["P/BV"]) dibujarDash($("bankFeat"), "P/BV", true);   // el punto "Hoy"
   });
 }
@@ -2091,6 +2254,7 @@ async function cargarBancos() {
     ]);
     pintarBancos();
     // Market cap contra patrimonio: necesita el IPC ya cargado; baja la historia de precios aparte.
+    cargarPares();
     cargarCapBook().catch(e => {
       console.error("market cap", e);
       $("capChart").innerHTML = `<p class="err">No se pudo bajar la historia de precios: ${e.message}. Probá con Actualizar.</p>`;

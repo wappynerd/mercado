@@ -1,0 +1,35 @@
+name: Bancos de la región
+
+# Baja precios y balances de los bancos comparables (Yahoo Finance) y los guarda en data/pares.json.
+# Corre de lunes a viernes a media rueda y después del cierre de Nueva York (12:23 y 18:23 de Buenos
+# Aires), y también se puede lanzar a mano.
+on:
+  schedule:
+    - cron: "23 15,21 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pares:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install yfinance
+      - run: python scripts/pares.py
+      - name: Guardar si cambió
+        run: |
+          if git diff --quiet -- data/pares.json; then
+            echo "Sin cambios."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/pares.json
+            git commit -m "Bancos de la región al $(date -u +%Y-%m-%d)"
+            git pull --rebase
+            git push
+          fi
