@@ -175,7 +175,8 @@
   #paresTable tr.ar td { color: #fff; }
   #paresTable td.nom { color: var(--muted); font-size: 11px; }
   #secTabla th:first-child, #secTabla td:first-child { width: auto; }
-  #secTabla th[data-p] { cursor: pointer; }
+  #secTabla th[data-o] { cursor: pointer; }
+  #secTabla th[data-o]:hover { color: var(--text); }
   #secTabla th.on { color: var(--accent); }
   #secTabla tr.sector { cursor: pointer; }
   #secTabla tr.sector td:first-child { color: var(--text); font-weight: 600; }
@@ -2750,7 +2751,7 @@ let legPedida = false;
 // empresas (acciones totales × precio): un índice ponderado por market cap. En dólares, cada punta se
 // pasa a dólares con el CCL de su fecha. 1D contra el cierre anterior; 1S, 1M y YTD contra el último
 // cierre a 7 días, a un mes y al 31 de diciembre.
-const SC = { d: null, per: "1D", mon: store.get("sec_mon") || "ars", abiertos: new Set(), cargado: false };
+const SC = { d: null, per: "1D", orden: "mc", mon: store.get("sec_mon") || "ars", abiertos: new Set(), cargado: false };
 const PERIODOS = ["1D", "1S", "1M", "YTD"];
 
 async function cargarSectores() {
@@ -2865,15 +2866,17 @@ function pintarSectores() {
     const a = Math.min(1, Math.abs(v) / escala[p]) * 0.5 * k;
     return `<td class="heat" style="background:${v >= 0 ? `rgba(30,212,124,${a.toFixed(3)})` : `rgba(255,77,94,${a.toFixed(3)})`}">${fmtR(v)}</td>`;
   };
-  // Ordenado por market cap; el período elegido se marca en su columna.
-  let h = `<thead><tr><th>Sector</th><th>Market cap US$ M ▾</th>${PERIODOS.map(p => `<th data-p="${p}" class="${p === per ? "on" : ""}">${p}</th>`).join("")}</tr></thead><tbody>`;
+  // Se ordena tocando el título de la columna: market cap o cualquier período (de mayor a menor).
+  const ord = SC.orden, valor = (x) => (ord === "mc" ? x.mc : x.r[ord]) ?? -Infinity;
+  const tit = (k, txt) => `<th data-o="${k}" class="${k === ord ? "on" : ""}">${txt}${k === ord ? " ▾" : ""}</th>`;
+  let h = `<thead><tr><th>Sector</th>${tit("mc", "Market cap US$ M")}${PERIODOS.map(p => tit(p, p)).join("")}</tr></thead><tbody>`;
   h += `<tr class="total"><td>Total</td><td>${num(total.mc)}</td>${PERIODOS.map(p => celda(total.r[p], p)).join("")}</tr>`;
-  for (const x of [...sectores].sort((a, b) => (b.mc ?? 0) - (a.mc ?? 0))) {
+  for (const x of [...sectores].sort((a, b) => valor(b) - valor(a))) {
     const ab = SC.abiertos.has(x.nombre);
     h += `<tr class="sector${ab ? " abierto" : ""}" data-s="${x.nombre}"><td>${x.nombre}</td><td>${num(x.mc)}</td>${PERIODOS.map(p => celda(x.r[p], p)).join("")}</tr>`;
     if (!ab) continue;
     const esp = x.ts.map(t => ({ t, mc: mcUSD([t]), r: Object.fromEntries(PERIODOS.map(p => [p, rendimiento([t], p)])) }))
-      .filter(e => e.mc).sort((a, b) => b.mc - a.mc);
+      .filter(e => e.mc).sort((a, b) => valor(b) - valor(a));
     for (const e of esp) h += `<tr class="esp"><td>${e.t}</td><td>${num(e.mc)}</td>${PERIODOS.map(p => celda(e.r[p], p, 0.7)).join("")}</tr>`;
   }
   $("secTabla").innerHTML = h + "</tbody>";
@@ -2937,8 +2940,8 @@ function secEnVivo() {
 document.querySelectorAll("#secPeriodos button").forEach(b => b.addEventListener("click", () => { SC.per = b.dataset.p; pintarSectores(); }));
 document.querySelectorAll("#secMoneda button").forEach(b => b.addEventListener("click", () => { SC.mon = b.dataset.m; store.set("sec_mon", SC.mon); pintarSectores(); }));
 $("secTabla").addEventListener("click", (e) => {
-  const th = e.target.closest("th[data-p]");
-  if (th) { SC.per = th.dataset.p; pintarSectores(); return; }
+  const th = e.target.closest("th[data-o]");
+  if (th) { SC.orden = th.dataset.o; if (th.dataset.o !== "mc") SC.per = th.dataset.o; pintarSectores(); return; }
   const tr = e.target.closest("tr.sector");
   if (!tr) return;
   SC.abiertos.has(tr.dataset.s) ? SC.abiertos.delete(tr.dataset.s) : SC.abiertos.add(tr.dataset.s);
