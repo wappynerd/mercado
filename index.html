@@ -1843,7 +1843,6 @@ function dibujarCapBook(el) {
   const tk = niceTicks(0, Math.max(...F.flatMap(r => [r.capS, r.bookS, BA.get(r)?.hi ?? 0]))), hi = tk.at(-1);
   const x = (i) => L + i * pw / (n - 1), y = (v) => T + ph - v / hi * ph;
   const marcas = [...ELECCIONES];
-  F.forEach((r, i) => { if (i && r.n > F[i - 1].n) marcas.push({ f: r.f, label: "+" + Object.keys(r.books).filter(b => !(b in F[i - 1].books)).join(" ") }); });
 
   let s = `<svg width="${W}" height="${H}" role="img" aria-label="Market cap y patrimonio del sistema">`;
   for (const t of tk) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${num(t)}</text>`;
