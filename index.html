@@ -1856,9 +1856,17 @@ function dibujarCapBook(el) {
   const tramo = (k) => conB.map((b, i) => b ? `${x(i).toFixed(1)},${y(b[k]).toFixed(1)}` : null);
   const traza = (k) => { let d = "", pen = false; tramo(k).forEach(p => { if (!p) { pen = false; return; } d += (pen ? "L" : "M") + p; pen = true; }); return d; };
   if (conB.some(Boolean)) {
-    const i0 = conB.findIndex(Boolean), arr = tramo("hi").slice(i0).filter(Boolean), abj = tramo("lo").slice(i0).filter(Boolean).reverse();
-    s += `<path d="M${arr.join("L")}L${abj.join("L")}Z" fill="#ffb000" opacity=".07"/>`
-      + `<path d="${traza("hi")}${traza("lo")}" fill="none" stroke="#ffb000" stroke-width=".7" opacity=".35"/>`
+    // Un relleno por cada tramo continuo: si la banda se corta (cambia la cantidad de bancos), no se une el hueco.
+    const hiP = tramo("hi"), loP = tramo("lo");
+    let ini = -1;
+    conB.forEach((v, i) => {
+      if (v && ini < 0) ini = i;
+      if (ini >= 0 && (!conB[i + 1] || i === conB.length - 1)) {
+        if (i > ini) s += `<path d="M${hiP.slice(ini, i + 1).join("L")}L${loP.slice(ini, i + 1).reverse().join("L")}Z" fill="#ffb000" opacity=".07"/>`;
+        ini = -1;
+      }
+    });
+    s += `<path d="${traza("hi")}${traza("lo")}" fill="none" stroke="#ffb000" stroke-width=".7" opacity=".35"/>`
       + `<path d="${traza("mid")}" fill="none" stroke="#ffb000" stroke-width=".7" stroke-dasharray="3 4" opacity=".4"/>`;
   }
   const linea = (k) => F.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[k]).toFixed(1)}`).join("");
