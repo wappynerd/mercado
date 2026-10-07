@@ -8,12 +8,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* Terminal: siempre oscuro, denso, monoespaciado; ámbar como acento. */
+  /* Terminal estilo Reuters/Bloomberg: negro puro, paneles con marco azul, títulos en cian,
+     la cifra clave en barra amarilla, ámbar como acento. Siempre oscuro, denso, monoespaciado. */
   :root {
     color-scheme: dark;
-    --bg: #06080b; --panel: #0c1016; --panel2: #10151d; --text: #d8dee7; --muted: #6f7b8b;
-    --border: #1b222c; --grid: #141a22; --accent: #ffb000; --sun: #ffb000;
-    --up: #1ed47c; --down: #ff4d5e;
+    --bg: #000; --panel: #000; --panel2: #000a26; --text: #e6e6e6; --muted: #5fb4c2;
+    --border: #1d33d6; --grid: #0b1a52; --accent: #ffb000; --sun: #ffb000;
+    --cyan: #3fe0f0; --hl: #ffe600; --frame: #2a44ff;
+    --up: #22e36b; --down: #ff3b3b;
     --flash-up: rgba(30,212,124,.14); --flash-down: rgba(255,77,94,.14);
     --tape: #000; --tape-text: #d8dee7;
     --b1: #3d8eff; --b2: #ff6a3d; --b3: #19b37a; --b4: #e0a000;
@@ -191,6 +193,57 @@
   .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
   .chart .mk { stroke: #5b6573; stroke-width: 1; stroke-dasharray: 3 3; }
   .chart .mkl { fill: var(--muted); font: 9px var(--mono); }
+
+  /* ---------- Marco de terminal ---------- */
+  .tape { border-bottom: 2px solid var(--frame); }
+  .tape-item { border-right-color: var(--grid); }
+  .tape-item b { color: var(--cyan); }
+  header { border-bottom: 2px solid var(--frame); }
+  .brand .logo { background: var(--hl); }
+  .brand p { border-left-color: var(--frame); }
+  .tabs button { color: var(--muted); }
+  .tabs button kbd { color: var(--hl); }
+  .tabs button[aria-selected="true"] { color: #000; background: var(--hl); border-bottom-color: var(--hl); }
+  .tabs button[aria-selected="true"] kbd { color: #000; }
+  .card { border-color: var(--border); border-radius: 0; }
+  .mcard:hover { border-color: var(--frame); }
+  .mhead { border-bottom: 1px solid var(--border); margin: -10px -12px 0; padding: 6px 12px; background: var(--panel2); }
+  .mhead h3 { color: var(--cyan); font-weight: 600; }
+  .sec { margin: 24px 0 8px; gap: 0; }
+  .sec h2 { background: var(--frame); color: #fff; padding: 5px 10px; letter-spacing: .14em; }
+  .sec::after { border-top: 2px solid var(--frame); }
+  .intro h2 { color: var(--hl); }
+  .headlines { background: var(--border); border-color: var(--border); }
+  .headline { border-left: 0; background: #000; }
+  .headline .k { color: var(--cyan); }
+  .headline p .num { color: #000; background: var(--hl); padding: 0 4px; white-space: nowrap; }
+  th { color: var(--cyan); background: var(--panel2); border-bottom: 1px solid var(--border); }
+  th, td { padding: 6px 10px; border-bottom-color: var(--grid); }
+  tbody tr:hover td { background: rgba(42,68,255,.12); }
+  .btable td:first-child { color: var(--cyan); }
+  .btable td.na { color: #24335f; }
+  .btable tr.grp th { color: var(--hl); }
+  #paresTable tr.pais td { color: var(--hl); border-top-color: var(--border); }
+  #paresTable td.nom { color: var(--muted); }
+  #secTabla th.on { color: #000; background: var(--hl); }
+  #secTabla tr.sector td:first-child { color: #fff; }
+  #secTabla tr.total td { color: #000; background: var(--hl) !important; font-weight: 700; }   /* gana al color de calor */
+  .bcard { border-top: 3px solid var(--c); }
+  .bcard .k { color: var(--cyan); }
+  .bcard .hero .v { color: var(--hl); }
+  .rangos button.on { color: #000; background: var(--hl); border-color: var(--hl); }
+  button { background: var(--hl); border-color: var(--hl); }
+  button.ghost, a.btn { border-color: var(--border); }
+  button.ghost:hover, a.btn:hover { border-color: var(--hl); color: var(--hl); }
+  input { border-color: var(--border); }
+  input:focus { border-color: var(--hl); }
+  .live { color: var(--up); }
+  .chart .ax, .chart .mkl { fill: var(--muted); }
+  .chart .zero { stroke: #3a55ff; }
+  .chart .xh, .chart .mk { stroke: #3a55ff; }
+  .tip { border-color: var(--frame); background: #000; }
+  .tip b { color: var(--hl); }
+  footer { border-top: 2px solid var(--frame); }
 
   footer { max-width: 1440px; margin: 0 auto; padding: 8px 16px 24px; color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); }
 </style>
