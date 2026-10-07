@@ -591,19 +591,19 @@ function setStatus(kind, text) {
 const parseSymbols = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
 // Acciones de los bancos del monitor: se suman al feed para el P/BV en vivo.
 let BANK_SYMS = ["GGAL - 24hs", "BMA - 24hs", "BBAR - 24hs", "SUPV - 24hs"];
-// Pestaña Sectores: especies por sector. VIST cotiza en BYMA como CEDEAR (su precio sale del panel de CEDEARs).
+// Pestaña Sectores: acciones locales por sector (sin CEDEARs). Quedan afuera las que casi no operan.
 const SECTORES = [
   ["Bancos", ["GGAL", "BMA", "BBAR", "SUPV", "BPAT", "VALO", "BHIP"]],
   ["Servicios financieros", ["BYMA", "A3"]],
-  ["Petróleo", ["YPFD", "VIST", "PAMP", "CAPX"]],
+  ["Petróleo", ["YPFD", "PAMP", "CAPX"]],
   ["Gas", ["TGSU2", "TGNO4", "ECOG", "METR", "GBAN", "DGCU2", "CGPA2"]],
   ["Generación eléctrica", ["CEPU", "CECO2"]],
   ["Transporte y distribución eléctrica", ["TRAN", "EDN"]],
-  ["Materiales", ["TXAR", "ALUA", "LOMA", "HARG", "CELU", "FERR", "FIPL", "CARC"]],
+  ["Materiales", ["TXAR", "ALUA", "LOMA", "HARG", "CELU", "RIGO", "FERR", "FIPL", "CARC"]],
   ["Telecomunicaciones y medios", ["TECO2", "CVH", "GCLA"]],
-  ["Agro y alimentos", ["CRES", "MOLA", "MOLI", "LEDE", "SAMI", "AGRO", "MORI", "SEMI"]],
-  ["Real estate", ["IRSA", "CTIO", "GCDI"]],
-  ["Consumo, industria y otros", ["MIRG", "PATA", "COME", "BOLT", "RICH", "GRIM", "HAVA", "LONG", "AUSO", "OEST"]],
+  ["Agro y alimentos", ["CRES", "MOLA", "MOLI", "LEDE", "SAMI", "INTR", "CADO", "AGRO", "MORI", "SEMI"]],
+  ["Real estate y construcción", ["IRSA", "CTIO", "POLL", "GCDI"]],
+  ["Consumo, industria y otros", ["MIRG", "PATA", "COME", "BOLT", "GAMI", "RICH", "GRIM", "HAVA", "GARO", "DOME", "ROSE", "LONG", "AUSO", "OEST"]],
 ];
 const SECT_SYMS = SECTORES.flatMap(([, ts]) => ts).map(t => `${t} - 24hs`);
 const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs", "AL30C - 24hs"];
@@ -2820,7 +2820,6 @@ async function cargarSectores() {
     const [d] = await Promise.all([
       getJSON(`data/sectores.json?t=${Math.floor(Date.now() / 3600000)}`),
       preciosPublicos().catch(e => console.error("data912", e)),
-      preciosCedears().catch(e => console.error("data912 cedears", e)),
       preciosLeg().catch(e => console.error("data912 bonos", e)),
     ]);
     const hoyF = hoy();
@@ -2840,17 +2839,6 @@ async function cargarSectores() {
     $("secError").hidden = false;
     $("secError").innerHTML = `<h3>No se pudieron cargar los sectores</h3><p>${e.message}</p>`;
     $("secEstado").textContent = "";
-  }
-}
-
-// Las empresas de Sectores que cotizan como CEDEAR (VIST) no están en el panel de acciones.
-const SECT_CEDEARS = ["VIST"];
-async function preciosCedears() {
-  const d = await getJSON("https://data912.com/live/arg_cedears");
-  for (const x of d) {
-    if (!SECT_CEDEARS.includes(x.symbol)) continue;
-    const p = x.c > 0 ? x.c : x.px_bid > 0 ? x.px_bid : null;
-    if (p) PX[x.symbol] = { p, var1: esNum(x.pct_change) ? x.pct_change / 100 : null, v: x.v };
   }
 }
 
@@ -3023,7 +3011,7 @@ $("secRefresh").addEventListener("click", cargarSectores);
 // Sin feed de CGR, los precios se refrescan cada minuto desde Data912.
 setInterval(async () => {
   if (!SC.cargado || tab !== "sectores" || document.visibilityState !== "visible") return;
-  try { await Promise.all([preciosPublicos(), preciosCedears(), preciosLeg()]); secEnVivo(); } catch (e) { console.error("data912", e); }
+  try { await Promise.all([preciosPublicos(), preciosLeg()]); secEnVivo(); } catch (e) { console.error("data912", e); }
 }, 60 * 1000);
 let secPedida = false;
 

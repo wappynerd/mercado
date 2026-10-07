@@ -24,15 +24,12 @@ import urllib.request
 import yfinance as yf
 
 # Las mismas especies que arma la pestaña Sectores (la clasificación vive en index.html).
-TICKERS = """GGAL BMA BBAR SUPV BPAT VALO BHIP BYMA A3 YPFD VIST CAPX TGSU2 TGNO4 ECOG METR GBAN DGCU2 CGPA2
+TICKERS = """GGAL BMA BBAR SUPV BPAT VALO BHIP BYMA A3 YPFD CAPX TGSU2 TGNO4 ECOG METR GBAN DGCU2 CGPA2
 PAMP CEPU CECO2 TRAN EDN TXAR ALUA LOMA HARG CELU FERR FIPL CARC TECO2 CVH GCLA CRES MOLA MOLI LEDE
-SAMI AGRO MORI SEMI IRSA CTIO GCDI MIRG PATA COME BOLT RICH GRIM HAVA LONG AUSO OEST""".split()
+SAMI AGRO MORI SEMI IRSA CTIO GCDI MIRG PATA COME BOLT RICH GRIM HAVA LONG AUSO OEST
+INTR CADO RIGO POLL GAMI GARO DOME ROSE""".split()
 SALIDA = pathlib.Path(__file__).resolve().parent.parent / "data" / "sectores.json"
 D912 = "https://data912.com/historical/"
-# Empresas que en BYMA cotizan como CEDEAR (local -> ticker en Nueva York). Data912 no tiene su historia y
-# Yahoo toma el CEDEAR como si fuera una acción: las acciones se cuentan en CEDEARs (las de Nueva York ×
-# la proporción) y la historia se arma con el precio en Nueva York × CCL / proporción.
-CEDEARS = {"VIST": "VIST"}
 
 
 def cierres(ruta: str, desde: str) -> list:
@@ -86,41 +83,15 @@ def acciones(t: str) -> float | None:
     return None
 
 
-def leer(url: str):
-    pedido = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(pedido, timeout=60) as r:
-        return json.load(r)
-
-
-def proporcion(t: str, nyse: str) -> int:
-    """CEDEARs por acción: precio en Nueva York × CCL / precio del CEDEAR, todo de ahora."""
-    vivo = {x["symbol"]: x for x in leer("https://data912.com/live/arg_cedears")}
-    bonos = {x["symbol"]: x for x in leer("https://data912.com/live/arg_bonds")}
-    ccl = bonos["AL30"]["c"] / bonos["AL30C"]["c"]
-    usd = float(yf.Ticker(nyse).fast_info["last_price"])
-    r = round(usd * ccl / vivo[t]["c"])
-    print(t, "proporción CEDEAR", usd * ccl / vivo[t]["c"], "->", r)
-    return r
-
-
 def main() -> None:
     previo = json.loads(SALIDA.read_text(encoding="utf-8"))["acciones"] if SALIDA.exists() else {}
     desde = f"{datetime.date.today().year - 1}-12-01"
     a30, a30c = dict(cierres("bonds/AL30", desde)), dict(cierres("bonds/AL30C", desde))
     ccl = [[f, round(a30[f] / a30c[f], 2)] for f in sorted(a30) if f in a30c]
-    prop = {}
-    for t, nyse in CEDEARS.items():
-        try:
-            prop[t] = proporcion(t, nyse)
-        except Exception as e:
-            print(t, "sin proporción", e)
     salida = {}
     for t in TICKERS:
         try:
-            if t in CEDEARS:
-                a = yf.Ticker(CEDEARS[t]).info.get("sharesOutstanding") * prop[t] if t in prop else None
-            else:
-                a = acciones(t)
+            a = acciones(t)
         except Exception as e:   # una que falla no tira abajo al resto: queda la del día anterior
             print(t, "ERROR", e)
             a = None
@@ -132,13 +103,7 @@ def main() -> None:
     if len(salida) < len(TICKERS) // 2:
         raise SystemExit("Fallaron demasiadas: no se toca el archivo.")
     hist = {}
-    cclD = dict(ccl)
     for t in TICKERS:
-        if t in CEDEARS:
-            if t in prop:
-                h = yf.Ticker(CEDEARS[t]).history(start=desde, auto_adjust=False)["Close"].dropna()
-                hist[t] = [[str(f.date()), round(float(c) * cclD[str(f.date())] / prop[t], 4)] for f, c in h.items() if str(f.date()) in cclD]
-            continue
         try:
             hist[t] = ajustar(t, cierres(f"stocks/{t}", desde))
         except Exception:
