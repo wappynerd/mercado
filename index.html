@@ -47,7 +47,7 @@
   .brand h1 { font: 800 16px/1 var(--display); font-stretch: 125%; letter-spacing: .06em; margin: 0; text-transform: uppercase; }
   .brand p { margin: 0; font-size: 10px; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; border-left: 1px solid var(--border); padding-left: 10px; }
   .tabs { display: flex; align-items: stretch; }
-  .tabs button { font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 16px; border-radius: 0; cursor: pointer; }
+  .tabs button { font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 12px; border-radius: 0; cursor: pointer; }
   .tabs button kbd { font: inherit; color: var(--accent); margin-right: 6px; opacity: .8; }
   .tabs button:hover { color: var(--text); background: transparent; }
   .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); background: linear-gradient(to top, rgba(255,176,0,.08), transparent); }
@@ -188,6 +188,13 @@
   #secTabla tr.esp td:first-child { padding-left: 28px; }
   #secTabla tr.esp td { font-size: 12px; }
   #secTabla td.heat { color: #fff; }
+  #opTabla th, #opTabla td { padding: 5px 8px; }
+  #opTabla th:first-child, #opTabla td:first-child { width: auto; text-align: center; color: var(--text); }
+  #opTabla td.k, #opTabla th.k { color: #fff; font-weight: 700; background: var(--panel2); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  #opTabla td.itm { background: rgba(255,176,0,.07); }
+  #opTabla tr.atm td.k { color: #000; background: var(--hl); }
+  #opTabla tr.spot td { color: var(--hl); font-weight: 700; text-align: center; padding: 3px; background: #000; border-bottom: 1px solid var(--hl); }
+  #opActivos { flex-wrap: wrap; }
   .rangos { display: inline-flex; }
   .rangos button { padding: 9px 10px; margin-left: -1px; }
   .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
@@ -201,6 +208,7 @@
   header { border-bottom: 2px solid var(--frame); }
   .brand .logo { background: var(--hl); }
   .brand p { border-left-color: var(--frame); }
+  @media (max-width: 1560px) { .brand p { display: none; } }
   .tabs button { color: var(--muted); }
   .tabs button kbd { color: var(--hl); }
   .tabs button[aria-selected="true"] { color: #000; background: var(--hl); border-bottom-color: var(--hl); }
@@ -265,6 +273,7 @@
       <button type="button" role="tab" data-tab="bancos"><kbd>3</kbd>Bancos</button>
       <button type="button" role="tab" data-tab="legislacion"><kbd>4</kbd>Legislación</button>
       <button type="button" role="tab" data-tab="sectores"><kbd>5</kbd>Sectores</button>
+      <button type="button" role="tab" data-tab="opciones"><kbd>6</kbd>Opciones</button>
     </nav>
     <div class="clock">
       <span>BA <span class="num" id="reloj">--:--</span></span>
@@ -459,6 +468,37 @@
 
       <div class="sec"><h2>Mapa de rendimientos</h2></div>
       <div class="card table-wrap"><table class="btable" id="secTabla"></table></div>
+    </div>
+  </div>
+
+  <!-- ========================== OPCIONES ========================== -->
+  <div id="tab-opciones" hidden>
+    <div class="macro-bar">
+      <div class="intro">
+        <h2>Opciones</h2>
+        <p id="opEstado">Cargando…</p>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <label for="opTasa" style="margin:0 4px 0 0">Tasa TNA (%)</label>
+        <input id="opTasa" type="number" min="0" max="200" step="0.25" style="width:80px;flex:none">
+        <button type="button" class="ghost" id="opRefresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="card err-card" id="opError" hidden></div>
+    <div id="opBody" hidden>
+      <div class="toolbar"><span class="rangos" id="opActivos"></span></div>
+      <div class="toolbar"><span class="rangos" id="opVtos"></span></div>
+      <div class="headlines" id="opStrip" style="margin-top:0"></div>
+
+      <div class="sec"><h2>Cadena</h2></div>
+      <div class="card table-wrap"><table class="btable" id="opTabla"></table></div>
+
+      <div class="sec"><h2>Sonrisa de volatilidad</h2></div>
+      <article class="card mcard">
+        <div class="mhead"><h3>Volatilidad implícita por strike</h3>
+          <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#3987e5"></span>Calls</span><span><span class="swatch" style="--c:#d95926"></span>Puts</span></span></div>
+        <div class="chart" id="opSonrisa" style="height:320px"></div>
+      </article>
     </div>
   </div>
 </main>
@@ -659,6 +699,7 @@ function recibir(sym, md, reemplazar) {
   }
   if (LEG_SYMS.includes(sym)) legEnVivo();
   if (SECT_SYMS.includes(sym)) secEnVivo();
+  if (tab === "opciones" && OP.cargado && sym === `${OP_SUBY[OP.und]} - 24hs`) opEnVivo();
 }
 
 function handle(msg) {
@@ -1245,6 +1286,7 @@ async function cargarMacro() {
         foot: `Dato al ${fDia(u.f)}`,
         pts: r, o: { fmt: (v) => `${num(v, 2)}%`, fmtAxis: (v) => num(v, 0) + "%" },
       });
+      if (id === "tamar") TAMAR_HOY = u.v;
       if (id === "tamar") cinta("tamar", `${num(u.v, 2)}%`, cintaChg(d, `${num(Math.abs(d), 2)} pp`, 0));
     })),
 
@@ -3016,10 +3058,254 @@ setInterval(async () => {
 let secPedida = false;
 
 /* ======================================================================= */
+/*  Opciones                                                               */
+/* ======================================================================= */
+//
+// Cadena de opciones de BYMA (Data912, se refresca cada minuto). Símbolo: activo (3 letras) + C/V +
+// strike + mes ("GFGC6200OC"); con strikes de 5 dígitos el mes queda en una letra ("GFGC10300O") y se
+// deduce de los vencimientos del mismo activo. Vencen el tercer viernes del mes. Volatilidad implícita
+// y delta con Black-Scholes (sin dividendos), con la tasa del recuadro (por defecto, la TAMAR).
+const OP_SUBY = { GFG: "GGAL", YPF: "YPFD", COM: "COME", PAM: "PAMP", MET: "METR", EDN: "EDN", BYM: "BYMA", ALU: "ALUA", TXA: "TXAR",
+  CEP: "CEPU", TRA: "TRAN", BHI: "BHIP", TEC: "TECO2", TGS: "TGSU2", CRE: "CRES", TGN: "TGNO4", BBA: "BBAR", CEC: "CECO2", LOM: "LOMA",
+  SUP: "SUPV", BMA: "BMA" };
+const OP_MESES = { EN: 1, FE: 2, MR: 3, AB: 4, MY: 5, JN: 6, JU: 6, JL: 7, AG: 8, SE: 9, OC: 10, NO: 11, NV: 11, DI: 12 };
+const OP = { d: [], und: "GFG", vto: null, hv: {}, cargado: false };
+let TAMAR_HOY = null;   // la llena la pestaña Macro
+
+async function cargarOpciones() {
+  $("opEstado").textContent = "Cargando…";
+  try {
+    const [d] = await Promise.all([
+      getJSON("https://data912.com/live/arg_options"),
+      preciosPublicos().catch(e => console.error("data912", e)),
+    ]);
+    OP.d = parsearOpciones(d);
+    if (!OP.d.some(o => o.und === OP.und)) OP.und = OP.d[0]?.und;
+    OP.cargado = true;
+    $("opError").hidden = true;
+    $("opBody").hidden = false;
+    if (!$("opTasa").value) $("opTasa").value = store.get("op_tasa") || (TAMAR_HOY != null ? num(TAMAR_HOY, 2).replace(/\./g, "").replace(",", ".") : "25");
+    pintarOpciones();
+    cargarHV(OP_SUBY[OP.und]);
+    $("opEstado").textContent = `Datos al ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}.`;
+  } catch (e) {
+    console.error("opciones", e);
+    $("opError").hidden = false;
+    $("opError").innerHTML = `<h3>No se pudieron cargar las opciones</h3><p>${e.message}</p>`;
+    $("opEstado").textContent = "";
+  }
+}
+
+// Tercer viernes del mes, a las 17 de Buenos Aires.
+function tercerViernes(anio, mes) {
+  const d = new Date(Date.UTC(anio, mes - 1, 1));
+  const primero = 1 + (5 - d.getUTCDay() + 7) % 7;
+  return { f: `${anio}-${String(mes).padStart(2, "0")}-${String(primero + 14).padStart(2, "0")}`, t: Date.UTC(anio, mes - 1, primero + 14, 20) };
+}
+
+function parsearOpciones(d) {
+  const filas = [];
+  for (const x of d) {
+    const m = /^([A-Z]{3})([CV])(\d+(?:\.\d+)?)([A-Z]{1,2})$/.exec(x.symbol);
+    if (!m || !OP_SUBY[m[1]]) continue;
+    filas.push({ sym: x.symbol, und: m[1], call: m[2] === "C", k: +m[3], cod: m[4],
+      bid: x.px_bid > 0 ? x.px_bid : null, ask: x.px_ask > 0 ? x.px_ask : null, last: x.c > 0 ? x.c : null,
+      v: x.v || 0, chg: esNum(x.pct_change) ? x.pct_change / 100 : null });
+  }
+  // Mes de una letra: el de dos letras del mismo activo que empiece igual (o de cualquier activo).
+  const codigos = (und) => [...new Set(filas.filter(f => f.cod.length === 2 && (!und || f.und === und)).map(f => f.cod))];
+  const hoyF = hoy(), [anio, mesHoy] = hoyF.split("-").map(Number);
+  for (const f of filas) {
+    if (f.cod.length === 1) f.cod = codigos(f.und).find(c => c[0] === f.cod) || codigos().find(c => c[0] === f.cod) || f.cod;
+    const mes = OP_MESES[f.cod];
+    if (!mes) continue;
+    const v = tercerViernes(mes >= mesHoy ? anio : anio + 1, mes);
+    if (v.f < hoyF) Object.assign(v, tercerViernes(anio + 1, mes));
+    f.vto = v.f; f.tv = v.t;
+  }
+  return filas.filter(f => f.vto);
+}
+
+// Normal acumulada (Abramowitz-Stegun 7.1.26) y Black-Scholes.
+function ncdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const e = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x / 2);
+  return x >= 0 ? (1 + e) / 2 : (1 - e) / 2;
+}
+function bsPrecio(S, K, T, r, s, call) {
+  const d1 = (Math.log(S / K) + (r + s * s / 2) * T) / (s * Math.sqrt(T)), d2 = d1 - s * Math.sqrt(T);
+  return call ? S * ncdf(d1) - K * Math.exp(-r * T) * ncdf(d2) : K * Math.exp(-r * T) * ncdf(-d2) - S * ncdf(-d1);
+}
+function bsDelta(S, K, T, r, s, call) {
+  const d1 = (Math.log(S / K) + (r + s * s / 2) * T) / (s * Math.sqrt(T));
+  return call ? ncdf(d1) : ncdf(d1) - 1;
+}
+// Volatilidad implícita por bisección; null si el precio no tiene valor temporal o está fuera de rango.
+function volImplicita(p, S, K, T, r, call) {
+  const piso = call ? Math.max(0, S - K * Math.exp(-r * T)) : Math.max(0, K * Math.exp(-r * T) - S);
+  if (!(p > piso * 1.0005) || p >= bsPrecio(S, K, T, r, 5, call)) return null;
+  let lo = 0.005, hi = 5;
+  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; bsPrecio(S, K, T, r, m, call) > p ? hi = m : lo = m; }
+  return (lo + hi) / 2;
+}
+
+function spotOp(und) {
+  const t = OP_SUBY[und], md = state[`${t} - 24hs`];
+  if (md?.LA?.price) return { p: md.LA.price, var1: md.CL?.price ? md.LA.price / md.CL.price - 1 : null };
+  return PX[t] ? { p: PX[t].p, var1: PX[t].var1 } : null;
+}
+// TNA (capitalizable cada 30 días) -> tasa continua.
+function tasaOp() {
+  const tna = parseFloat(String($("opTasa").value).replace(",", "."));
+  return esNum(tna) ? Math.log(1 + tna / 100 * 30 / 365) * 365 / 30 : 0;
+}
+
+// Volatilidad histórica de 20 ruedas del subyacente (cierres de Data912).
+async function cargarHV(t) {
+  if (!t || OP.hv[t] !== undefined) return;
+  OP.hv[t] = null;
+  try {
+    const h = await getJSON(`https://data912.com/historical/stocks/${t}`, 30000);
+    const cs = [...limpiar(h).m.entries()].filter(([f]) => f < hoy()).sort().map(([, x]) => x.c).slice(-21);
+    const rs = cs.slice(1).map((c, i) => Math.log(c / cs[i])), m = rs.reduce((a, b) => a + b, 0) / rs.length;
+    OP.hv[t] = rs.length > 10 ? Math.sqrt(rs.reduce((a, b) => a + (b - m) ** 2, 0) / (rs.length - 1) * 252) : null;
+    pintarOpciones();
+  } catch (e) { console.error("vol histórica", e); }
+}
+
+// Opciones del activo y vencimiento elegidos, con precio de referencia (punta media o último), VI y delta.
+function cadenaOp() {
+  const sp = spotOp(OP.und), filas = OP.d.filter(o => o.und === OP.und && o.vto === OP.vto);
+  if (!sp || !filas.length) return { sp, filas: [], T: null };
+  const T = Math.max(1 / 365 / 24, (filas[0].tv - Date.now()) / (365 * 864e5)), r = tasaOp();
+  for (const o of filas) {
+    o.ref = o.bid && o.ask ? (o.bid + o.ask) / 2 : o.last;
+    o.iv = o.ref ? volImplicita(o.ref, sp.p, o.k, T, r, o.call) : null;
+    o.delta = o.iv ? bsDelta(sp.p, o.k, T, r, o.iv, o.call) : null;
+  }
+  return { sp, filas, T };
+}
+
+const fOp = (v) => v == null ? "—" : num(v, v < 10 ? 3 : v < 100 ? 2 : 1);
+
+function pintarOpciones() {
+  if (!OP.cargado) return;
+  // Activos: los que tienen opciones, primero los de más volumen.
+  const unds = [...new Set(OP.d.map(o => o.und))].map(u => ({ u, vol: OP.d.filter(o => o.und === u).reduce((a, o) => a + o.v * (o.last || 0), 0), n: OP.d.filter(o => o.und === u).length }))
+    .sort((a, b) => b.vol - a.vol || b.n - a.n);
+  $("opActivos").innerHTML = unds.map(({ u }) => `<button type="button" class="ghost${u === OP.und ? " on" : ""}" data-u="${u}">${OP_SUBY[u]}</button>`).join("");
+  const vtos = [...new Set(OP.d.filter(o => o.und === OP.und).map(o => o.vto))].sort();
+  if (!vtos.includes(OP.vto)) OP.vto = vtos[0];
+  $("opVtos").innerHTML = vtos.map(v => `<button type="button" class="ghost${v === OP.vto ? " on" : ""}" data-v="${v}">${fDia(v).slice(0, 5)}</button>`).join("");
+
+  const { sp, filas, T } = cadenaOp(), tk = OP_SUBY[OP.und];
+  if (!sp || !filas.length) { $("opTabla").innerHTML = `<tbody><tr><td>Sin datos del subyacente o de la cadena.</td></tr></tbody>`; return; }
+  const strikes = [...new Set(filas.map(o => o.k))].sort((a, b) => a - b);
+  const atm = strikes.reduce((a, k) => Math.abs(k - sp.p) < Math.abs(a - sp.p) ? k : a, strikes[0]);
+  const ivAtm = filas.filter(o => o.k === atm && o.iv).map(o => o.iv), ivA = ivAtm.length ? ivAtm.reduce((a, b) => a + b) / ivAtm.length : null;
+  const hv = OP.hv[tk], dias = Math.round((Date.parse(OP.vto) - Date.parse(hoy())) / 864e5);
+  const vc = filas.filter(o => o.call).reduce((a, o) => a + o.v, 0), vp = filas.filter(o => !o.call).reduce((a, o) => a + o.v, 0);
+  $("opStrip").innerHTML = [
+    [tk, `<span class="num">${num(sp.p, 2)}</span> ${sp.var1 != null ? pill(sp.var1, pct(Math.abs(sp.var1), 2), 1) : ""}`],
+    ["Vencimiento", `<span class="num">${fDia(OP.vto)}</span> · faltan ${dias} ${dias === 1 ? "día" : "días"}.`],
+    ["Vol. implícita ATM", `<span class="num">${pct(ivA, 1)}</span> en el strike ${num(atm)}` + (hv ? ` · histórica 20 ruedas ${pct(hv, 1)}.` : ".")],
+    ["Volumen", `Calls <span class="num">${num(vc)}</span> · puts <span class="num">${num(vp)}</span>` + (vc ? ` · put/call ${num(vp / vc, 2)}.` : ".")],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+
+  // Cadena: calls | strike | puts. Dentro del dinero, sombreado; el precio del subyacente entre los strikes.
+  const lado = (o, call) => {
+    if (!o) return `<td class="na" colspan="6">—</td>`;
+    const itm = call ? o.k < sp.p : o.k > sp.p, c = itm ? ' class="itm"' : "";
+    const celdas = [num(o.v), fOp(o.bid), fOp(o.ask), fOp(o.last), o.iv ? pct(o.iv, 1) : "—", o.delta != null ? num(o.delta, 2) : "—"];
+    return (call ? celdas : celdas.reverse()).map(v => `<td${c}>${v}</td>`).join("");
+  };
+  let h = `<thead><tr class="grp"><th colspan="6">Calls</th><th></th><th colspan="6">Puts</th></tr>
+    <tr><th>Vol</th><th>Bid</th><th>Ask</th><th>Último</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>Δ</th><th>VI</th><th>Último</th><th>Ask</th><th>Bid</th><th>Vol</th></tr></thead><tbody>`;
+  let marcado = false;
+  for (const k of strikes) {
+    if (!marcado && k > sp.p) { h += `<tr class="spot"><td colspan="13">▸ ${tk} ${num(sp.p, 2)}</td></tr>`; marcado = true; }
+    const c = filas.find(o => o.call && o.k === k), p = filas.find(o => !o.call && o.k === k);
+    h += `<tr${k === atm ? ' class="atm"' : ""}>${lado(c, true)}<td class="k">${num(k)}</td>${lado(p, false)}</tr>`;
+  }
+  if (!marcado) h += `<tr class="spot"><td colspan="13">▸ ${tk} ${num(sp.p, 2)}</td></tr>`;
+  $("opTabla").innerHTML = h + "</tbody>";
+
+  chart($("opSonrisa"), [], { draw: (el) => dibujarSonrisa(el, filas, sp.p, hv) });
+}
+
+// Sonrisa: VI por strike con las opciones fuera del dinero (puts debajo del spot, calls arriba; en el strike
+// más cercano, las dos): las dentro del dinero casi no operan y sus puntas dan volatilidades sin sentido.
+function dibujarSonrisa(el, filas, S, hv) {
+  const ks0 = [...new Set(filas.map(o => o.k))], atm = ks0.reduce((a, k) => Math.abs(k - S) < Math.abs(a - S) ? k : a, ks0[0]);
+  const pts = filas.filter(o => o.iv && (o.k === atm || (o.call ? o.k > S : o.k < S)));
+  if (!el.clientWidth) return;
+  if (pts.length < 2) { el.innerHTML = `<p class="hint">Sin precios suficientes para calcular la volatilidad.</p>`; return; }
+  const W = el.clientWidth, H = 320, L = 50, R = 16, T = 16, B_ = 28, pw = W - L - R, ph = H - T - B_;
+  const ks = pts.map(o => o.k), kx0 = Math.min(...ks, S), kx1 = Math.max(...ks, S);
+  const ivs = pts.map(o => o.iv).concat(hv ? [hv] : []), ty = niceTicks(Math.min(...ivs) * 0.9, Math.max(...ivs) * 1.05);
+  const y0 = ty[0], y1 = ty.at(-1), x = (k) => L + (k - kx0) / (kx1 - kx0) * pw, y = (v) => T + ph - (v - y0) / (y1 - y0) * ph;
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Sonrisa de volatilidad">`;
+  for (const t of ty) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${pct(t, 0)}</text>`;
+  for (const t of niceTicks(kx0, kx1, 5).filter(t => t >= kx0 && t <= kx1)) s += `<text class="ax" x="${x(t)}" y="${H - 8}" text-anchor="middle">${num(t)}</text>`;
+  s += `<line class="mk" x1="${x(S)}" x2="${x(S)}" y1="${T}" y2="${T + ph}"/><text class="mkl" x="${x(S) + 4}" y="${T + 10}">${num(S, 0)}</text>`;
+  if (hv) s += `<line x1="${L}" x2="${W - R}" y1="${y(hv)}" y2="${y(hv)}" style="stroke:var(--muted);stroke-dasharray:4 4"/><text class="ax" x="${W - R}" y="${y(hv) - 4}" text-anchor="end">histórica 20r ${pct(hv, 1)}</text>`;
+  for (const [call, c] of [[true, "#3987e5"], [false, "#d95926"]]) {
+    const serie = pts.filter(o => o.call === call).sort((a, b) => a.k - b.k);
+    if (!serie.length) continue;
+    s += `<path d="${serie.map((o, i) => `${i ? "L" : "M"}${x(o.k).toFixed(1)},${y(o.iv).toFixed(1)}`).join("")}" fill="none" stroke="${c}" stroke-width="1.5"/>`;
+    for (const o of serie) s += `<circle cx="${x(o.k)}" cy="${y(o.iv)}" r="${o.v > 0 ? 3.5 : 2}" style="fill:${o.v > 0 ? c : "var(--panel)"};stroke:${c};stroke-width:1"/>`;
+  }
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  const strikes = [...new Set(ks)].sort((a, b) => a - b);
+  el.onpointermove = (e) => {
+    const mx = e.clientX - svg.getBoundingClientRect().left;
+    const k = strikes.reduce((a, b) => Math.abs(x(b) - mx) < Math.abs(x(a) - mx) ? b : a, strikes[0]);
+    const c = pts.find(o => o.call && o.k === k), p = pts.find(o => !o.call && o.k === k);
+    xh.setAttribute("x1", x(k)); xh.setAttribute("x2", x(k)); xh.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>Strike ${num(k)}</b> <span class="muted">${k >= S ? "+" : ""}${pct(k / S - 1, 1)} del spot</span>`
+      + (c ? `<br><span style="color:#3987e5">Call</span> VI ${pct(c.iv, 1)} · Δ ${num(c.delta, 2)} · ${fOp(c.ref)}` : "")
+      + (p ? `<br><span style="color:#d95926">Put</span> VI ${pct(p.iv, 1)} · Δ ${num(p.delta, 2)} · ${fOp(p.ref)}` : "");
+    tip.hidden = false;
+    ubicarTip(tip, x(k), W);
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
+}
+
+let opPendiente = false;
+function opEnVivo() {
+  if (!OP.cargado || opPendiente || tab !== "opciones") return;
+  opPendiente = true;
+  requestAnimationFrame(() => { opPendiente = false; pintarOpciones(); });
+}
+
+$("opActivos").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-u]");
+  if (!b) return;
+  OP.und = b.dataset.u; OP.vto = null;
+  pintarOpciones();
+  cargarHV(OP_SUBY[OP.und]);
+});
+$("opVtos").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { OP.vto = b.dataset.v; pintarOpciones(); } });
+$("opTasa").addEventListener("change", () => { store.set("op_tasa", $("opTasa").value); pintarOpciones(); });
+$("opRefresh").addEventListener("click", cargarOpciones);
+// Las opciones y el subyacente (sin feed de CGR) se refrescan cada minuto mientras la pestaña está abierta.
+setInterval(async () => {
+  if (!OP.cargado || tab !== "opciones" || document.visibilityState !== "visible") return;
+  try {
+    const [d] = await Promise.all([getJSON("https://data912.com/live/arg_options"), preciosPublicos()]);
+    OP.d = parsearOpciones(d);
+    opEnVivo();
+  } catch (e) { console.error("data912 opciones", e); }
+}, 60 * 1000);
+let opPedida = false;
+
+/* ======================================================================= */
 /*  Pestañas                                                               */
 /* ======================================================================= */
 
-const TABS = ["mercado", "macro", "bancos", "legislacion", "sectores"];
+const TABS = ["mercado", "macro", "bancos", "legislacion", "sectores", "opciones"];
 let tab = null;
 
 function setTab(t) {
@@ -3032,6 +3318,8 @@ function setTab(t) {
   if (t === "legislacion" && !legPedida) { legPedida = true; cargarLegislacion(); }
   if (t === "sectores" && !secPedida) { secPedida = true; cargarSectores(); }
   if (t === "sectores") secEnVivo();
+  if (t === "opciones" && !opPedida) { opPedida = true; cargarOpciones(); }
+  if (t === "opciones") opEnVivo();
 }
 
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
