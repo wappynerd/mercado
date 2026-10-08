@@ -656,7 +656,9 @@ const SECT_SYMS = SECTORES.flatMap(([, ts]) => ts).map(t => `${t} - 24hs`);
 const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs", "AL30C - 24hs"];
 // Cauciones en pesos (su último es la TNA): la más corta con precio es la tasa de la pestaña Opciones.
 const CAUC_SYMS = [1, 2, 3, 4, 5, 6, 7].map(d => `PESOS - ${d}D`);
-const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS, ...SECT_SYMS, ...CAUC_SYMS])];
+// Opciones de la cadena que se está mirando (activo + vencimiento): llegan operación por operación.
+let OP_SYMS = [];
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS, ...SECT_SYMS, ...CAUC_SYMS, ...OP_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
@@ -708,6 +710,7 @@ function recibir(sym, md, reemplazar) {
   }
   if (LEG_SYMS.includes(sym)) legEnVivo();
   if (SECT_SYMS.includes(sym)) secEnVivo();
+  if (OP_SYMS.includes(sym)) opCGR(sym);
   if (tab === "opciones" && OP.cargado && (sym === `${OP_SUBY[OP.und]} - 24hs` || CAUC_SYMS.includes(sym))) opEnVivo();
 }
 
@@ -3095,6 +3098,7 @@ async function cargarOpciones() {
     $("opError").hidden = true;
     $("opBody").hidden = false;
     pintarOpciones();
+    opSuscribir();
     cargarHV(OP_SUBY[OP.und]);
     $("opEstado").textContent = `Datos al ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}.`;
   } catch (e) {
@@ -3306,6 +3310,34 @@ function dibujarSonrisa(el, filas, S, hv) {
   el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
 
+// Con token, la cadena elegida se suscribe al feed de CGR (cambiar de activo o vencimiento reconecta).
+function opSuscribir() {
+  const syms = OP.d.filter(o => o.und === OP.und && o.vto === OP.vto).map(o => `${o.sym} - 24hs`);
+  if (syms.join() === OP_SYMS.join()) return;
+  OP_SYMS = syms;
+  if (ws) connect();
+}
+// Precios de CGR sobre la fila: una operación nueva (cambia la hora del último) destella y suma sus contratos.
+function aplicarCGR(o, md, flash) {
+  const la = md?.LA;
+  if (!la?.price) return;
+  if (flash && o.laDate && la.date !== o.laDate) {
+    OP.flash[o.sym] = { dir: Math.sign(la.price - (o.last ?? la.price)), t: Date.now() };
+    o.v += la.size || 0;
+  }
+  o.laDate = la.date;
+  o.last = la.price;
+  o.bid = md.BI?.[0]?.price ?? null;
+  o.ask = md.OF?.[0]?.price ?? null;
+  if (md.CL?.price) o.chg = la.price / md.CL.price - 1;
+}
+function opCGR(sym) {
+  const o = OP.d.find(x => `${x.sym} - 24hs` === sym);
+  if (!o) return;
+  aplicarCGR(o, state[sym], true);
+  opEnVivo();
+}
+
 let opPendiente = false;
 function opEnVivo() {
   if (!OP.cargado || opPendiente || tab !== "opciones") return;
@@ -3318,9 +3350,10 @@ $("opActivos").addEventListener("click", (e) => {
   if (!b) return;
   OP.und = b.dataset.u; OP.vto = null;
   pintarOpciones();
+  opSuscribir();
   cargarHV(OP_SUBY[OP.und]);
 });
-$("opVtos").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { OP.vto = b.dataset.v; pintarOpciones(); } });
+$("opVtos").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { OP.vto = b.dataset.v; pintarOpciones(); opSuscribir(); } });
 $("opTasa").addEventListener("change", () => {
   const v = parseFloat(String($("opTasa").value).replace(",", "."));
   OP.manual = esNum(v) ? v : null;
@@ -3335,10 +3368,12 @@ setInterval(async () => {
     const [d] = await Promise.all([getJSON("https://data912.com/live/arg_options"), preciosPublicos()]);
     const antes = new Map(OP.d.map(o => [o.sym, o]));
     OP.d = parsearOpciones(d);
-    // Operó si subió el volumen: el destello compara el último precio con el de la lectura anterior.
+    // Las que llegan por CGR conservan su precio en vivo (destellan con cada operación). Las demás: operó si
+    // subió el volumen de Data912, y el destello compara el último con el de la lectura anterior.
     const ahora = Date.now();
     for (const o of OP.d) {
-      const a = antes.get(o.sym);
+      const a = antes.get(o.sym), md = state[`${o.sym} - 24hs`];
+      if (md?.LA?.price) { if (a) { o.v = Math.max(o.v, a.v); o.laDate = a.laDate; } aplicarCGR(o, md, false); continue; }
       if (a && o.v > a.v) OP.flash[o.sym] = { dir: Math.sign((o.last ?? 0) - (a.last ?? 0)), t: ahora };
     }
     opEnVivo();
