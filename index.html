@@ -3216,11 +3216,11 @@ function pintarOpciones() {
   const lado = (o, call) => {
     if (!o) return `<td class="na" colspan="6">—</td>`;
     const itm = call ? o.k < sp.p : o.k > sp.p, c = itm ? ' class="itm"' : "";
-    const celdas = [num(o.v), fOp(o.bid), fOp(o.ask), fOp(o.last), o.iv ? pct(o.iv, 1) : "—", o.delta != null ? num(o.delta, 2) : "—"];
+    const celdas = [num(o.v), fOp(o.bid), fOp(o.last), fOp(o.ask), o.iv ? pct(o.iv, 1) : "—", o.delta != null ? num(o.delta, 2) : "—"];
     return (call ? celdas : celdas.reverse()).map(v => `<td${c}>${v}</td>`).join("");
   };
   let h = `<thead><tr class="grp"><th colspan="6">Calls</th><th></th><th colspan="6">Puts</th></tr>
-    <tr><th>Vol</th><th>Bid</th><th>Ask</th><th>Último</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>Δ</th><th>VI</th><th>Último</th><th>Ask</th><th>Bid</th><th>Vol</th></tr></thead><tbody>`;
+    <tr><th>Vol</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>Δ</th><th>VI</th><th>Ask</th><th>Último</th><th>Bid</th><th>Vol</th></tr></thead><tbody>`;
   let marcado = false;
   for (const k of strikes) {
     if (!marcado && k > sp.p) { h += `<tr class="spot"><td colspan="13">▸ ${tk} ${num(sp.p, 2)}</td></tr>`; marcado = true; }
