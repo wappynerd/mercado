@@ -485,8 +485,9 @@
         <p id="opEstado">Cargando…</p>
       </div>
       <div class="toolbar" style="margin:0">
-        <label for="opTasa" style="margin:0 4px 0 0">Tasa TNA (%)</label>
-        <input id="opTasa" type="number" min="0" max="200" step="0.25" style="width:80px;flex:none">
+        <label for="opTasa" style="margin:0 4px 0 0" id="opTasaFuente">Tasa TNA (%)</label>
+        <input id="opTasa" type="number" min="0" max="200" step="0.05" style="width:80px;flex:none">
+        <button type="button" class="ghost" id="opTasaAuto" hidden>Caución</button>
         <button type="button" class="ghost" id="opRefresh">Actualizar</button>
       </div>
     </div>
@@ -653,7 +654,9 @@ const SECTORES = [
 ];
 const SECT_SYMS = SECTORES.flatMap(([, ts]) => ts).map(t => `${t} - 24hs`);
 const LEG_SYMS = [...["AL29", "GD29", "AL30", "GD30", "AL35", "GD35", "AE38", "GD38", "AL41", "GD41"].map(b => `${b} - 24hs`), "AL30D - 24hs", "AL30C - 24hs"];
-const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS, ...SECT_SYMS])];
+// Cauciones en pesos (su último es la TNA): la más corta con precio es la tasa de la pestaña Opciones.
+const CAUC_SYMS = [1, 2, 3, 4, 5, 6, 7].map(d => `PESOS - ${d}D`);
+const suscriptos = () => [...new Set([...wanted, ...FX_SYMS, ...BANK_SYMS, ...LEG_SYMS, ...SECT_SYMS, ...CAUC_SYMS])];
 
 // CGR devuelve "MERV - XMEV - AL30 - CI": lo mapeamos al símbolo que pedimos.
 function matchSymbol(full) {
@@ -705,7 +708,7 @@ function recibir(sym, md, reemplazar) {
   }
   if (LEG_SYMS.includes(sym)) legEnVivo();
   if (SECT_SYMS.includes(sym)) secEnVivo();
-  if (tab === "opciones" && OP.cargado && sym === `${OP_SUBY[OP.und]} - 24hs`) opEnVivo();
+  if (tab === "opciones" && OP.cargado && (sym === `${OP_SUBY[OP.und]} - 24hs` || CAUC_SYMS.includes(sym))) opEnVivo();
 }
 
 function handle(msg) {
@@ -3075,7 +3078,7 @@ const OP_SUBY = { GFG: "GGAL", YPF: "YPFD", COM: "COME", PAM: "PAMP", MET: "METR
   CEP: "CEPU", TRA: "TRAN", BHI: "BHIP", TEC: "TECO2", TGS: "TGSU2", CRE: "CRES", TGN: "TGNO4", BBA: "BBAR", CEC: "CECO2", LOM: "LOMA",
   SUP: "SUPV", BMA: "BMA" };
 const OP_MESES = { EN: 1, FE: 2, MR: 3, AB: 4, MY: 5, JN: 6, JU: 6, JL: 7, AG: 8, SE: 9, OC: 10, NO: 11, NV: 11, DI: 12 };
-const OP = { d: [], und: "GFG", vto: null, hv: {}, flash: {}, cargado: false };
+const OP = { d: [], und: "GFG", vto: null, hv: {}, flash: {}, manual: null, cargado: false };
 const OP_FLASH = 3000;   // ms que dura el destello de una operación nueva
 let TAMAR_HOY = null;   // la llena la pestaña Macro
 
@@ -3091,7 +3094,6 @@ async function cargarOpciones() {
     OP.cargado = true;
     $("opError").hidden = true;
     $("opBody").hidden = false;
-    if (!$("opTasa").value) $("opTasa").value = store.get("op_tasa") || (TAMAR_HOY != null ? num(TAMAR_HOY, 2).replace(/\./g, "").replace(",", ".") : "25");
     pintarOpciones();
     cargarHV(OP_SUBY[OP.und]);
     $("opEstado").textContent = `Datos al ${new Date().toLocaleTimeString("es-AR", { hour12: false, hour: "2-digit", minute: "2-digit" })}.`;
@@ -3161,10 +3163,28 @@ function spotOp(und) {
   if (md?.LA?.price) return { p: md.LA.price, var1: md.CL?.price ? md.LA.price / md.CL.price - 1 : null };
   return PX[t] ? { p: PX[t].p, var1: PX[t].var1 } : null;
 }
-// TNA (capitalizable cada 30 días) -> tasa continua.
+// Tasa: la que se escriba a mano; si no, el último de la caución en pesos más corta (CGR, con token);
+// sin caución, la TAMAR.
+function caucionCorta() {
+  for (const s of CAUC_SYMS) { const p = state[s]?.LA?.price; if (esNum(p) && p > 0) return { tna: p, plazo: s.split(" - ")[1] }; }
+  return null;
+}
+function tnaOp() {
+  if (OP.manual != null) return { tna: OP.manual, fuente: "Tasa manual" };
+  const c = caucionCorta();
+  if (c) return { tna: c.tna, fuente: `Caución ${c.plazo}` };
+  return { tna: TAMAR_HOY ?? 25, fuente: TAMAR_HOY != null ? "TAMAR" : "Tasa" };
+}
+// TNA de caución (interés simple al plazo) -> tasa continua.
 function tasaOp() {
-  const tna = parseFloat(String($("opTasa").value).replace(",", "."));
-  return esNum(tna) ? Math.log(1 + tna / 100 * 30 / 365) * 365 / 30 : 0;
+  const { tna } = tnaOp();
+  return Math.log(1 + tna / 100 / 365) * 365;
+}
+function pintarTasaOp() {
+  const t = tnaOp(), inp = $("opTasa");
+  $("opTasaFuente").textContent = `${t.fuente} · TNA %`;
+  if (document.activeElement !== inp) inp.value = (+t.tna).toFixed(2);
+  $("opTasaAuto").hidden = OP.manual == null;
 }
 
 // Volatilidad histórica de 20 ruedas del subyacente (cierres de Data912).
@@ -3197,6 +3217,7 @@ const fOp = (v) => v == null ? "—" : num(v, v < 10 ? 3 : v < 100 ? 2 : 1);
 
 function pintarOpciones() {
   if (!OP.cargado) return;
+  pintarTasaOp();
   // Activos: los que tienen opciones, primero los de más volumen.
   const unds = [...new Set(OP.d.map(o => o.und))].map(u => ({ u, vol: OP.d.filter(o => o.und === u).reduce((a, o) => a + o.v * (o.last || 0), 0), n: OP.d.filter(o => o.und === u).length }))
     .sort((a, b) => b.vol - a.vol || b.n - a.n);
@@ -3300,7 +3321,12 @@ $("opActivos").addEventListener("click", (e) => {
   cargarHV(OP_SUBY[OP.und]);
 });
 $("opVtos").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { OP.vto = b.dataset.v; pintarOpciones(); } });
-$("opTasa").addEventListener("change", () => { store.set("op_tasa", $("opTasa").value); pintarOpciones(); });
+$("opTasa").addEventListener("change", () => {
+  const v = parseFloat(String($("opTasa").value).replace(",", "."));
+  OP.manual = esNum(v) ? v : null;
+  pintarOpciones();
+});
+$("opTasaAuto").addEventListener("click", () => { OP.manual = null; pintarOpciones(); });
 $("opRefresh").addEventListener("click", cargarOpciones);
 // Las opciones y el subyacente (sin feed de CGR) se refrescan cada minuto mientras la pestaña está abierta.
 setInterval(async () => {
