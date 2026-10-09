@@ -196,11 +196,11 @@
   #opTabla tr.spot td { color: var(--hl); font-weight: 700; text-align: center; padding: 3px; background: #000; border-bottom: 1px solid var(--hl); }
   #opActivos { flex-wrap: wrap; }
   #opTabla span.up { color: var(--up); } #opTabla span.dn { color: var(--down); }
-  #opTabla td.fl-up { animation: opUp 3s ease-out; } #opTabla td.fl-dn { animation: opDn 3s ease-out; } #opTabla td.fl-eq { animation: opEq 3s ease-out; }
-  @keyframes opUp { from { background: rgba(34,227,107,.38); color: #fff; } }
-  @keyframes opDn { from { background: rgba(255,59,59,.38); color: #fff; } }
-  @keyframes opEq { from { background: rgba(255,230,0,.25); color: #fff; } }
-  @media (prefers-reduced-motion: reduce) { #opTabla td.fl-up, #opTabla td.fl-dn, #opTabla td.fl-eq { animation: none; } }
+  #opTabla td.fl-bid { animation: opUp 3s ease-out; } #opTabla td.fl-ask { animation: opDn 3s ease-out; } #opTabla td.fl-mid { animation: opEq 3s ease-out; }
+  @keyframes opUp { from { background: rgba(34,227,107,.55); color: #fff; } }
+  @keyframes opDn { from { background: rgba(255,59,59,.55); color: #fff; } }
+  @keyframes opEq { from { background: rgba(255,230,0,.3); color: #fff; } }
+  @media (prefers-reduced-motion: reduce) { #opTabla td.fl-bid, #opTabla td.fl-ask, #opTabla td.fl-mid { animation: none; } }
   .rangos { display: inline-flex; }
   .rangos button { padding: 9px 10px; margin-left: -1px; }
   .rangos button.on { color: #000; background: var(--accent); border-color: var(--accent); }
@@ -3245,16 +3245,19 @@ function pintarOpciones() {
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 
   // Cadena: calls | strike | puts. Dentro del dinero, sombreado; el precio del subyacente entre los strikes.
-  // Si operó desde la lectura anterior, el lado de la fila destella (verde/rojo según el precio, ámbar si
-  // operó al mismo precio). El retraso negativo mantiene el destello en su punto aunque la tabla se repinte.
+  // Operación nueva: si fue al offer destella el Ask en rojo; si fue al bid, el Bid en verde; entre puntas,
+  // el Último en ámbar. El retraso negativo mantiene el destello en su punto aunque la tabla se repinte.
   const lado = (o, call) => {
     if (!o) return `<td class="na" colspan="6">—</td>`;
     const itm = call ? o.k < sp.p : o.k > sp.p, f = OP.flash[o.sym], dt = f ? Date.now() - f.t : Infinity;
-    const cls = [itm ? "itm" : "", dt < OP_FLASH ? `fl-${f.dir > 0 ? "up" : f.dir < 0 ? "dn" : "eq"}` : ""].filter(Boolean).join(" ");
-    const attr = (cls ? ` class="${cls}"` : "") + (dt < OP_FLASH ? ` style="animation-delay:-${dt}ms"` : "");
+    const celda = (v, cual) => {
+      const fl = dt < OP_FLASH && f.lado === cual;
+      const cls = [itm ? "itm" : "", fl ? `fl-${cual}` : ""].filter(Boolean).join(" ");
+      return `<td${cls ? ` class="${cls}"` : ""}${fl ? ` style="animation-delay:-${dt}ms"` : ""}>${v}</td>`;
+    };
     const ult = o.last == null ? "—" : `<span class="${o.chg > 0 ? "up" : o.chg < 0 ? "dn" : ""}">${fOp(o.last)}</span>`;
-    const celdas = [num(o.v), fOp(o.bid), ult, fOp(o.ask), o.iv ? pct(o.iv, 1) : "—", o.delta != null ? num(o.delta, 2) : "—"];
-    return celdas.map(v => `<td${attr}>${v}</td>`).join("");
+    return celda(num(o.v)) + celda(fOp(o.bid), "bid") + celda(ult, "mid") + celda(fOp(o.ask), "ask")
+      + celda(o.iv ? pct(o.iv, 1) : "—") + celda(o.delta != null ? num(o.delta, 2) : "—");
   };
   let h = `<thead><tr class="grp"><th colspan="6">Calls</th><th></th><th colspan="6">Puts</th></tr>
     <tr><th>Vol</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>Vol</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th></tr></thead><tbody>`;
@@ -3317,12 +3320,14 @@ function opSuscribir() {
   OP_SYMS = syms;
   if (ws) connect();
 }
+// De qué lado se hizo una operación, contra las puntas que había justo antes.
+const ladoOp = (p, bid, ask) => ask && p >= ask * 0.9999 ? "ask" : bid && p <= bid * 1.0001 ? "bid" : "mid";
 // Precios de CGR sobre la fila: una operación nueva (cambia la hora del último) destella y suma sus contratos.
 function aplicarCGR(o, md, flash) {
   const la = md?.LA;
   if (!la?.price) return;
   if (flash && o.laDate && la.date !== o.laDate) {
-    OP.flash[o.sym] = { dir: Math.sign(la.price - (o.last ?? la.price)), t: Date.now() };
+    OP.flash[o.sym] = { lado: ladoOp(la.price, o.bid, o.ask), t: Date.now() };
     o.v += la.size || 0;
   }
   o.laDate = la.date;
@@ -3369,12 +3374,12 @@ setInterval(async () => {
     const antes = new Map(OP.d.map(o => [o.sym, o]));
     OP.d = parsearOpciones(d);
     // Las que llegan por CGR conservan su precio en vivo (destellan con cada operación). Las demás: operó si
-    // subió el volumen de Data912, y el destello compara el último con el de la lectura anterior.
+    // subió el volumen de Data912, y el lado sale de comparar el último con las puntas de la lectura anterior.
     const ahora = Date.now();
     for (const o of OP.d) {
       const a = antes.get(o.sym), md = state[`${o.sym} - 24hs`];
       if (md?.LA?.price) { if (a) { o.v = Math.max(o.v, a.v); o.laDate = a.laDate; } aplicarCGR(o, md, false); continue; }
-      if (a && o.v > a.v) OP.flash[o.sym] = { dir: Math.sign((o.last ?? 0) - (a.last ?? 0)), t: ahora };
+      if (a && o.v > a.v && o.last) OP.flash[o.sym] = { lado: ladoOp(o.last, a.bid, a.ask), t: ahora };
     }
     opEnVivo();
   } catch (e) { console.error("data912 opciones", e); }
