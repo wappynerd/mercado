@@ -524,7 +524,8 @@
       <div class="sec"><h2>Estrategias</h2></div>
       <div class="toolbar"><span class="rangos" id="estPresets" style="flex-wrap:wrap"></span></div>
       <div class="card table-wrap"><table class="btable" id="estPatas"></table></div>
-      <div class="toolbar" style="margin:8px 0"><span class="rangos"><button type="button" class="ghost" id="estAbajo">◀ Base abajo</button><button type="button" class="ghost" id="estArriba">Base arriba ▶</button></span><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
+      <div class="toolbar" style="margin:8px 0"><span class="rangos"><button type="button" class="ghost" id="estAbajo">◀ Bajar</button><button type="button" class="ghost" id="estArriba">Subir ▶</button></span>
+        <label for="estSalto" style="margin:0 4px 0 6px">de a</label><input id="estSalto" type="number" min="1" max="10" step="1" value="1" style="width:56px;flex:none"><label for="estSalto" style="margin:0 10px 0 4px">bases</label><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
       <div class="headlines" id="estResumen" style="margin-top:0"></div>
       <article class="card mcard" style="margin-top:8px">
         <div class="mhead"><h3>Resultado · $ por lote de 100 acciones</h3>
@@ -534,6 +535,7 @@
 
       <div class="sec"><h2>Comparador de estrategias</h2></div>
       <div class="toolbar"><span class="rangos" id="cmpTipos" style="flex-wrap:wrap"></span></div>
+      <div class="toolbar"><span class="rangos" id="cmpAncho"></span></div>
       <div class="card table-wrap"><table class="btable" id="cmpTabla"></table></div>
     </div>
   </div>
@@ -3490,6 +3492,13 @@ function estValor(X, hoyT, ctx) {
   return v;
 }
 
+// Spread vertical (dos opciones del mismo tipo, una comprada y otra vendida, misma cantidad): su ancho en pesos
+// por lote y lo que se paga (o cobra) en relación a ese ancho, que es lo máximo que puede valer al vencimiento.
+function anchoSpread(patas) {
+  const o = patas.filter(p => p.tipo !== "A");
+  if (o.length !== 2 || patas.length !== 2 || o[0].tipo !== o[1].tipo || o[0].lado === o[1].lado || o[0].q !== o[1].q) return null;
+  return Math.abs(o[0].k - o[1].k) * o[0].q * LOTE;
+}
 const plataEst = (v) => v === Infinity || v === -Infinity ? "Ilimitada" : `$ ${num(Math.abs(v), 0)}`;
 
 function pintarEstrategia() {
@@ -3503,6 +3512,7 @@ function pintarEstrategia() {
     ["Equilibrio", m.be.length ? m.be.map(b => `<span class="num">${num(b, 0)}</span> (${b >= S ? "+" : ""}${pct(b / S - 1, 1)})`).join(" · ") : "—"],
     ["Rendimiento máximo", m.rend != null ? `<span class="num">${pct(m.rend, 1)}</span> en ${m.dias} días · TNA ${pct(m.tna, 0)}` : "—"],
     ["Prob. de ganancia", `<span class="num">${pct(m.prob, 0)}</span> al vencimiento`],
+    ...(anchoSpread(ctx.patas) ? [["Costo / ancho", `<span class="num">${pct(Math.abs(m.neto) / anchoSpread(ctx.patas), 1)}</span> de $ ${num(anchoSpread(ctx.patas), 0)}${m.neto < 0 ? " (crédito)" : ""}`]] : []),
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
   chart($("estChart"), [], { draw: (el) => dibujarEstrategia(el, S, m.be, ctx) });
   pintarComparador(base);
@@ -3512,7 +3522,8 @@ function pintarEstrategia() {
 //
 // Todas las combinaciones de cada estrategia con las bases de la cadena (a precios de mercado: compra al ask,
 // venta al bid; sin punta, no entra). Se ordena tocando la columna; un clic en la fila la carga en el armador.
-const CMP = { tipo: "cubierto", orden: "prob", desc: true, filas: [] };
+const CMP = { tipo: "cubierto", orden: "prob", desc: true, ancho: 0, filas: [] };
+const CMP_CON_ANCHO = ["bull", "bear", "mariposa"];
 const CMP_TIPOS = [["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"], ["straddle", "Straddle"],
   ["strangle", "Strangle"], ["mariposa", "Mariposa"], ["collar", "Collar"], ["call", "Call"], ["put", "Put"]];
 
@@ -3523,13 +3534,14 @@ function generarCombinaciones(tipo, S) {
   if (tipo === "put") ks.forEach(k => out.push([P(1, "V", k)]));
   if (tipo === "cubierto") ks.forEach(k => out.push([P(1, "A"), P(-1, "C", k)]));
   if (tipo === "straddle") ks.forEach(k => out.push([P(1, "C", k), P(1, "V", k)]));
-  ks.forEach((k1, i) => ks.slice(i + 1, i + 5).forEach(k2 => {
+  const dists = CMP.ancho ? [CMP.ancho] : [1, 2, 3, 4];
+  ks.forEach((k1, i) => dists.map(d => ks[i + d]).filter(Boolean).forEach(k2 => {
     if (tipo === "bull") out.push([P(1, "C", k1), P(-1, "C", k2)]);
     if (tipo === "bear") out.push([P(1, "V", k2), P(-1, "V", k1)]);
   }));
   if (tipo === "strangle") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "V", kp), P(1, "C", kc)])));
   if (tipo === "collar") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "A"), P(1, "V", kp), P(-1, "C", kc)])));
-  if (tipo === "mariposa") ks.forEach((k, i) => [1, 2].forEach(d => { if (ks[i - d] && ks[i + d]) out.push([P(1, "C", ks[i - d]), P(-1, "C", k, 2), P(1, "C", ks[i + d])]); }));
+  if (tipo === "mariposa") ks.forEach((k, i) => (CMP.ancho ? [CMP.ancho] : [1, 2]).forEach(d => { if (ks[i - d] && ks[i + d]) out.push([P(1, "C", ks[i - d]), P(-1, "C", k, 2), P(1, "C", ks[i + d])]); }));
   return out.map(ps => ps.map(p => ({ ...p, p: precioMercado(p) }))).filter(ps => ps.every(p => esNum(p.p) && p.p > 0));
 }
 
@@ -3540,27 +3552,31 @@ function pintarComparador(base = estBase(), ya = false) {
   CMP.t = Date.now();
   ponerHTML($("cmpTipos"), CMP_TIPOS.map(([id, n]) => `<button type="button" class="ghost${id === CMP.tipo ? " on" : ""}" data-t="${id}">${n}</button>`).join(""));
   if (!base.S) { $("cmpTabla").innerHTML = ""; return; }
-  CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)) }));
+  ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">Distancia entre bases</span>`
+    + [0, 1, 2, 3, 4].map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
+  CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps) }));
+  const conAncho = CMP.filas.some(f => f.ancho);
   const val = (f) => {
     const m = f.m;
     switch (CMP.orden) {
       case "neto": return m.neto; case "maxG": return m.maxG; case "maxP": return m.maxP;
       case "be": return m.be.length ? Math.min(...m.be.map(b => Math.abs(b / base.S - 1))) : Infinity;
+      case "ratio": return f.ancho ? Math.abs(m.neto) / f.ancho : Infinity;
       case "rend": return m.rend ?? -Infinity; case "tna": return m.tna ?? -Infinity; default: return m.prob;
     }
   };
   CMP.filas.sort((a, b) => (CMP.desc ? val(b) - val(a) : val(a) - val(b)) || 0);
   const col = (k, t) => `<th data-o="${k}" class="${CMP.orden === k ? "on" : ""}">${t}${CMP.orden === k ? (CMP.desc ? " ▾" : " ▴") : ""}</th>`;
-  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
   CMP.filas.slice(0, 40).forEach((f, i) => {
     const m = f.m;
     h += `<tr data-i="${i}"><td>${basesTexto(f.ps)}</td>
-      <td>${m.neto >= 0 ? "" : '<span class="up">+</span>'}$ ${num(Math.abs(m.neto), 0)}</td><td>${plataEst(m.maxG)}</td>
+      <td>${m.neto >= 0 ? "" : '<span class="up">+</span>'}$ ${num(Math.abs(m.neto), 0)}</td>${conAncho ? `<td>${f.ancho ? `${pct(Math.abs(m.neto) / f.ancho, 1)} <span class="muted">de $ ${num(f.ancho, 0)}</span>` : "—"}</td>` : ""}<td>${plataEst(m.maxG)}</td>
       <td>${m.maxP >= 0 ? "—" : plataEst(m.maxP)}</td>
       <td>${m.be.length ? m.be.map(b => `${num(b, 0)} <span class="muted">(${b >= base.S ? "+" : ""}${pct(b / base.S - 1, 1)})</span>`).join("<br>") : "—"}</td>
       <td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td><td>${pct(m.prob, 0)}</td></tr>`;
   });
-  if (!CMP.filas.length) h += `<tr><td colspan="8" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
+  if (!CMP.filas.length) h += `<tr><td colspan="9" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
   ponerHTML($("cmpTabla"), h + "</tbody>");
 }
 
@@ -3646,11 +3662,12 @@ function moverBases(d, soloI) {
   OP.est.preset = null;
   pintarPatas(); pintarEstrategia();
 }
-$("estAbajo").addEventListener("click", () => moverBases(-1));
-$("estArriba").addEventListener("click", () => moverBases(1));
+const saltoBases = () => Math.max(1, Math.min(10, Math.round(+$("estSalto").value) || 1));
+$("estAbajo").addEventListener("click", () => moverBases(-saltoBases()));
+$("estArriba").addEventListener("click", () => moverBases(saltoBases()));
 $("estPatas").addEventListener("click", (e) => {
   const m = e.target.closest("button[data-mov]");
-  if (m) { moverBases(+m.dataset.mov, +m.dataset.i); return; }
+  if (m) { moverBases(+m.dataset.mov * saltoBases(), +m.dataset.i); return; }
   const b = e.target.closest("button[data-del]");
   if (!b) return;
   OP.est.patas.splice(+b.dataset.del, 1); OP.est.preset = null;
@@ -3667,11 +3684,15 @@ $("cmpTipos").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-t]");
   if (b) { CMP.tipo = b.dataset.t; pintarComparador(undefined, true); }
 });
+$("cmpAncho").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-a]");
+  if (b) { CMP.ancho = +b.dataset.a; pintarComparador(undefined, true); }
+});
 $("cmpTabla").addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   const th = e.target.closest("th[data-o]");
   if (th) {
-    if (CMP.orden === th.dataset.o) CMP.desc = !CMP.desc; else { CMP.orden = th.dataset.o; CMP.desc = !["be", "neto"].includes(th.dataset.o); }
+    if (CMP.orden === th.dataset.o) CMP.desc = !CMP.desc; else { CMP.orden = th.dataset.o; CMP.desc = !["be", "neto", "ratio"].includes(th.dataset.o); }
     pintarComparador(undefined, true); return;
   }
   const tr = e.target.closest("tr[data-i]");
