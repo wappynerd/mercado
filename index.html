@@ -196,7 +196,7 @@
   #opTabla tr.spot td { color: var(--hl); font-weight: 700; text-align: center; padding: 3px; background: #000; border-bottom: 1px solid var(--hl); }
   #opActivos { flex-wrap: wrap; }
   #opTabla span.up { color: var(--up); } #opTabla span.dn { color: var(--down); }
-  #opTabla td.fl-bid { animation: opUp 3s ease-out; } #opTabla td.fl-ask { animation: opDn 3s ease-out; } #opTabla td.fl-mid { animation: opEq 3s ease-out; }
+  #opTabla td.fl-bid { animation: opDn 3s ease-out; } #opTabla td.fl-ask { animation: opUp 3s ease-out; } #opTabla td.fl-mid { animation: opEq 3s ease-out; }
   @keyframes opUp { from { background: rgba(34,227,107,.55); color: #fff; } }
   @keyframes opDn { from { background: rgba(255,59,59,.55); color: #fff; } }
   @keyframes opEq { from { background: rgba(255,230,0,.3); color: #fff; } }
@@ -3248,8 +3248,8 @@ function pintarOpciones() {
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 
   // Cadena: calls | strike | puts. Dentro del dinero, sombreado; el precio del subyacente entre los strikes.
-  // Operación nueva: si fue al offer destella el Ask en rojo; si fue al bid, el Bid en verde; entre puntas,
-  // el Último en ámbar. El retraso negativo mantiene el destello en su punto aunque la tabla se repinte.
+  // Operación nueva: si fue al offer (compra agresiva) destella el Ask en verde; si fue al bid (venta
+  // agresiva), el Bid en rojo; entre puntas, el Último en ámbar. El retraso negativo mantiene el destello en su punto aunque la tabla se repinte.
   const lado = (o, call) => {
     if (!o) return `<td class="na" colspan="6">—</td>`;
     const itm = call ? o.k < sp.p : o.k > sp.p, f = OP.flash[o.sym], dt = f ? Date.now() - f.t : Infinity;
