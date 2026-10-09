@@ -3500,6 +3500,12 @@ function anchoSpread(patas) {
   if (o.length !== 2 || patas.length !== 2 || o[0].tipo !== o[1].tipo || o[0].lado === o[1].lado || o[0].q !== o[1].q) return null;
   return Math.abs(o[0].k - o[1].k) * o[0].q * LOTE;
 }
+// Dos opciones del mismo tipo, una comprada y otra vendida (spread o ratio): precio de la base cara / la barata.
+function caraBarata(patas) {
+  const o = patas.filter(p => p.tipo !== "A");
+  if (o.length !== 2 || patas.length !== 2 || o[0].tipo !== o[1].tipo || o[0].lado === o[1].lado || !(o[0].p > 0 && o[1].p > 0)) return null;
+  return Math.max(o[0].p, o[1].p) / Math.min(o[0].p, o[1].p);
+}
 const plataEst = (v) => v === Infinity || v === -Infinity ? "Ilimitada" : `$ ${num(Math.abs(v), 0)}`;
 
 function pintarEstrategia() {
@@ -3513,6 +3519,7 @@ function pintarEstrategia() {
     ["Equilibrio", m.be.length ? m.be.map(b => `<span class="num">${num(b, 0)}</span> (${b >= S ? "+" : ""}${pct(b / S - 1, 1)})`).join(" · ") : "—"],
     ["Rendimiento máximo", m.rend != null ? `<span class="num">${pct(m.rend, 1)}</span> en ${m.dias} días · TNA ${pct(m.tna, 0)}` : "—"],
     ["Prob. de ganancia", `<span class="num">${pct(m.prob, 0)}</span> al vencimiento`],
+    ...(caraBarata(ctx.patas) && !anchoSpread(ctx.patas) ? [["Base cara / barata", `<span class="num">${num(caraBarata(ctx.patas), 2)}</span> veces`]] : []),
     ...(anchoSpread(ctx.patas) ? [["Costo / ancho", `<span class="num">${pct(Math.abs(m.neto) / anchoSpread(ctx.patas), 1)}</span> de $ ${num(anchoSpread(ctx.patas), 0)}${m.neto < 0 ? " (crédito)" : ""}`]] : []),
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
   chart($("estChart"), [], { draw: (el) => dibujarEstrategia(el, S, m.be, ctx) });
@@ -3556,7 +3563,8 @@ function pintarComparador(base = estBase(), ya = false) {
   if (!base.S) { $("cmpTabla").innerHTML = ""; return; }
   ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">Distancia entre bases</span>`
     + [0, 1, 2, 3, 4].map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
-  CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps) }));
+  CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps), cb: caraBarata(ps) }));
+  const conCB = CMP.tipo === "ratio";
   const conAncho = CMP.filas.some(f => f.ancho);
   const val = (f) => {
     const m = f.m;
@@ -3564,16 +3572,17 @@ function pintarComparador(base = estBase(), ya = false) {
       case "neto": return m.neto; case "maxG": return m.maxG; case "maxP": return m.maxP;
       case "be": return m.be.length ? Math.min(...m.be.map(b => Math.abs(b / base.S - 1))) : Infinity;
       case "ratio": return f.ancho ? Math.abs(m.neto) / f.ancho : Infinity;
+      case "cb": return f.cb ?? -Infinity;
       case "rend": return m.rend ?? -Infinity; case "tna": return m.tna ?? -Infinity; default: return m.prob;
     }
   };
   CMP.filas.sort((a, b) => (CMP.desc ? val(b) - val(a) : val(a) - val(b)) || 0);
   const col = (k, t) => `<th data-o="${k}" class="${CMP.orden === k ? "on" : ""}">${t}${CMP.orden === k ? (CMP.desc ? " ▾" : " ▴") : ""}</th>`;
-  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${conCB ? col("cb", "Cara / barata") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
   CMP.filas.slice(0, 40).forEach((f, i) => {
     const m = f.m;
     h += `<tr data-i="${i}"><td>${basesTexto(f.ps)}</td>
-      <td>${m.neto >= 0 ? "" : '<span class="up">+</span>'}$ ${num(Math.abs(m.neto), 0)}</td>${conAncho ? `<td>${f.ancho ? `${pct(Math.abs(m.neto) / f.ancho, 1)} <span class="muted">de $ ${num(f.ancho, 0)}</span>` : "—"}</td>` : ""}<td>${plataEst(m.maxG)}</td>
+      <td>${m.neto >= 0 ? "" : '<span class="up">+</span>'}$ ${num(Math.abs(m.neto), 0)}</td>${conAncho ? `<td>${f.ancho ? `${pct(Math.abs(m.neto) / f.ancho, 1)} <span class="muted">de $ ${num(f.ancho, 0)}</span>` : "—"}</td>` : ""}${conCB ? `<td>${f.cb ? num(f.cb, 2) : "—"}</td>` : ""}<td>${plataEst(m.maxG)}</td>
       <td>${m.maxP >= 0 ? "—" : plataEst(m.maxP)}</td>
       <td>${m.be.length ? m.be.map(b => `${num(b, 0)} <span class="muted">(${b >= base.S ? "+" : ""}${pct(b / base.S - 1, 1)})</span>`).join("<br>") : "—"}</td>
       <td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td><td>${pct(m.prob, 0)}</td></tr>`;
