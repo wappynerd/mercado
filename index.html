@@ -3390,7 +3390,7 @@ function opCGR(sym) {
 // vencimiento y hoy (Black-Scholes con la VI de cada opción, o la ATM si no tiene).
 const LOTE = 100;
 const EST_PRESETS = [
-  ["call", "Call"], ["put", "Put"], ["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"],
+  ["call", "Call"], ["put", "Put"], ["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"], ["ratio", "Ratio"],
   ["straddle", "Straddle"], ["strangle", "Strangle"], ["mariposa", "Mariposa"], ["collar", "Collar"],
 ];
 OP.est = { preset: "cubierto", patas: [], clave: null };
@@ -3418,6 +3418,7 @@ function aplicarPreset(id) {
     cubierto: [P(1, "A"), P(-1, "C", k(1))],
     bull: [P(1, "C", k(0)), P(-1, "C", k(2))],
     bear: [P(1, "V", k(0)), P(-1, "V", k(-2))],
+    ratio: [P(1, "C", k(0)), P(-1, "C", k(2), 2)],   // ratio común: compra 1 call, vende 2 de una base más alta
     straddle: [P(1, "C", k(0)), P(1, "V", k(0))],
     strangle: [P(1, "V", k(-1)), P(1, "C", k(1))],
     mariposa: [P(1, "C", k(-1)), P(-1, "C", k(0), 2), P(1, "C", k(1))],
@@ -3523,8 +3524,8 @@ function pintarEstrategia() {
 // Todas las combinaciones de cada estrategia con las bases de la cadena (a precios de mercado: compra al ask,
 // venta al bid; sin punta, no entra). Se ordena tocando la columna; un clic en la fila la carga en el armador.
 const CMP = { tipo: "cubierto", orden: "prob", desc: true, ancho: 0, filas: [] };
-const CMP_CON_ANCHO = ["bull", "bear", "mariposa"];
-const CMP_TIPOS = [["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"], ["straddle", "Straddle"],
+const CMP_CON_ANCHO = ["bull", "bear", "ratio", "mariposa"];
+const CMP_TIPOS = [["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"], ["ratio", "Ratio"], ["straddle", "Straddle"],
   ["strangle", "Strangle"], ["mariposa", "Mariposa"], ["collar", "Collar"], ["call", "Call"], ["put", "Put"]];
 
 function generarCombinaciones(tipo, S) {
@@ -3538,6 +3539,7 @@ function generarCombinaciones(tipo, S) {
   ks.forEach((k1, i) => dists.map(d => ks[i + d]).filter(Boolean).forEach(k2 => {
     if (tipo === "bull") out.push([P(1, "C", k1), P(-1, "C", k2)]);
     if (tipo === "bear") out.push([P(1, "V", k2), P(-1, "V", k1)]);
+    if (tipo === "ratio") out.push([P(1, "C", k1), P(-1, "C", k2, 2)]);
   }));
   if (tipo === "strangle") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "V", kp), P(1, "C", kc)])));
   if (tipo === "collar") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "A"), P(1, "V", kp), P(-1, "C", kc)])));
