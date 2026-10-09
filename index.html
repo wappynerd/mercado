@@ -195,6 +195,12 @@
   #opTabla tr.atm td.k { color: #000; background: var(--hl); }
   #opTabla tr.spot td { color: var(--hl); font-weight: 700; text-align: center; padding: 3px; background: #000; border-bottom: 1px solid var(--hl); }
   #opActivos { flex-wrap: wrap; }
+  #estPatas th, #estPatas td { text-align: left; padding: 6px 10px; }
+  #estPatas th:first-child, #estPatas td:first-child { width: auto; }
+  #estPatas select, #estPatas input { background: #000; color: var(--text); border: 1px solid var(--border); border-radius: 0; font: 12px var(--mono); padding: 5px 6px; }
+  #estPatas input { width: 100px; }
+  #estPatas select:focus, #estPatas input:focus { outline: none; border-color: var(--hl); }
+  #estPatas button { padding: 4px 9px; }
   #opTabla span.up { color: var(--up); } #opTabla span.dn { color: var(--down); }
   #opTabla td.fl-bid { animation: opDn 3s ease-out; } #opTabla td.fl-ask { animation: opUp 3s ease-out; } #opTabla td.fl-mid { animation: opEq 3s ease-out; }
   @keyframes opUp { from { background: rgba(34,227,107,.55); color: #fff; } }
@@ -505,6 +511,17 @@
         <div class="mhead"><h3>Volatilidad implícita por strike</h3>
           <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#3987e5"></span>Calls</span><span><span class="swatch" style="--c:#d95926"></span>Puts</span></span></div>
         <div class="chart" id="opSonrisa" style="height:320px"></div>
+      </article>
+
+      <div class="sec"><h2>Estrategias</h2></div>
+      <div class="toolbar"><span class="rangos" id="estPresets" style="flex-wrap:wrap"></span></div>
+      <div class="card table-wrap"><table class="btable" id="estPatas"></table></div>
+      <div class="toolbar" style="margin:8px 0"><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
+      <div class="headlines" id="estResumen" style="margin-top:0"></div>
+      <article class="card mcard" style="margin-top:8px">
+        <div class="mhead"><h3>Resultado · $ por lote de 100 acciones</h3>
+          <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#ffb000"></span>Al vencimiento</span><span><span class="swatch" style="--c:var(--cyan)"></span>Hoy</span></span></div>
+        <div class="chart" id="estChart" style="height:340px"></div>
       </article>
     </div>
   </div>
@@ -3275,6 +3292,7 @@ function pintarOpciones() {
   $("opTabla").innerHTML = h + "</tbody>";
 
   chart($("opSonrisa"), [], { draw: (el) => dibujarSonrisa(el, filas, sp.p, hv) });
+  estEnCadena();
 }
 
 // Sonrisa: VI por strike con las opciones fuera del dinero (puts debajo del spot, calls arriba; en el strike
@@ -3347,6 +3365,200 @@ function opCGR(sym) {
   aplicarCGR(o, state[sym], true);
   opEnVivo();
 }
+
+/* ---------- Estrategias ---------- */
+//
+// Patas sobre la cadena elegida (activo + vencimiento). Precio por defecto: el que se pagaría en el mercado
+// (compra al ask, venta al bid; si no hay punta, la referencia). Resultado por lote de 100 acciones: al
+// vencimiento y hoy (Black-Scholes con la VI de cada opción, o la ATM si no tiene).
+const LOTE = 100;
+const EST_PRESETS = [
+  ["call", "Call"], ["put", "Put"], ["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"],
+  ["straddle", "Straddle"], ["strangle", "Strangle"], ["mariposa", "Mariposa"], ["collar", "Collar"],
+];
+OP.est = { preset: "cubierto", patas: [], clave: null };
+
+const estFilas = () => OP.d.filter(o => o.und === OP.und && o.vto === OP.vto);
+const estStrikes = () => [...new Set(estFilas().map(o => o.k))].sort((a, b) => a - b);
+const estOpcion = (tipo, k) => estFilas().find(o => o.call === (tipo === "C") && o.k === k);
+
+function precioMercado(p) {
+  if (p.tipo === "A") return spotOp(OP.und)?.p ?? null;
+  const o = estOpcion(p.tipo, p.k);
+  if (!o) return null;
+  return p.lado > 0 ? (o.ask ?? o.ref ?? o.last) : (o.bid ?? o.ref ?? o.last);
+}
+
+function aplicarPreset(id) {
+  const ks = estStrikes(), S = spotOp(OP.und)?.p;
+  if (!ks.length || !S) { OP.est.patas = []; return; }
+  const i0 = ks.reduce((b, k, i) => Math.abs(k - S) < Math.abs(ks[b] - S) ? i : b, 0);
+  const k = (d) => ks[Math.max(0, Math.min(ks.length - 1, i0 + d))];
+  const P = (lado, tipo, kk, q = 1) => ({ lado, tipo, k: tipo === "A" ? null : kk, q });
+  const def = {
+    call: [P(1, "C", k(0))],
+    put: [P(1, "V", k(0))],
+    cubierto: [P(1, "A"), P(-1, "C", k(1))],
+    bull: [P(1, "C", k(0)), P(-1, "C", k(2))],
+    bear: [P(1, "V", k(0)), P(-1, "V", k(-2))],
+    straddle: [P(1, "C", k(0)), P(1, "V", k(0))],
+    strangle: [P(1, "V", k(-1)), P(1, "C", k(1))],
+    mariposa: [P(1, "C", k(-1)), P(-1, "C", k(0), 2), P(1, "C", k(1))],
+    collar: [P(1, "A"), P(1, "V", k(-1)), P(-1, "C", k(1))],
+  }[id] || [];
+  OP.est.preset = id;
+  OP.est.patas = def.map(p => ({ ...p, p: precioMercado(p) }));
+}
+
+function pintarPatas() {
+  const ks = estStrikes();
+  $("estPresets").innerHTML = EST_PRESETS.map(([id, n]) => `<button type="button" class="ghost${id === OP.est.preset ? " on" : ""}" data-p="${id}">${n}</button>`).join("");
+  let h = `<thead><tr><th>Operación</th><th>Tipo</th><th>Strike</th><th>Lotes</th><th>Precio</th><th></th></tr></thead><tbody>`;
+  OP.est.patas.forEach((p, i) => {
+    const sel = (f, ops) => `<select data-i="${i}" data-f="${f}"${f === "k" && p.tipo === "A" ? " disabled" : ""}>${ops.map(([v, t]) => `<option value="${v}"${String(p[f]) === String(v) ? " selected" : ""}>${t}</option>`).join("")}</select>`;
+    h += `<tr><td>${sel("lado", [[1, "Compra"], [-1, "Venta"]])}</td><td>${sel("tipo", [["C", "Call"], ["V", "Put"], ["A", "Acción"]])}</td>
+      <td>${p.tipo === "A" ? `<span class="muted">${OP_SUBY[OP.und]}</span>` : sel("k", ks.map(k => [k, num(k)]))}</td>
+      <td><input data-i="${i}" data-f="q" type="number" min="1" step="1" value="${p.q}"></td>
+      <td><input data-i="${i}" data-f="p" type="number" min="0" step="0.01" value="${p.p != null ? +p.p.toFixed(3) : ""}"></td>
+      <td><button type="button" class="ghost" data-del="${i}" aria-label="Borrar pata">✕</button></td></tr>`;
+  });
+  if (!OP.est.patas.length) h += `<tr><td colspan="6" class="muted">Elegí una estrategia o agregá una pata.</td></tr>`;
+  $("estPatas").innerHTML = h + "</tbody>";
+}
+
+// Tasa, plazo y VI de cada pata: se calculan una vez por repintada (la cadena entera es cara de recalcular).
+function estCtx() {
+  const { sp, filas, T } = cadenaOp();
+  const c = sp ? filas.filter(o => o.iv).sort((a, b) => Math.abs(a.k - sp.p) - Math.abs(b.k - sp.p))[0] : null;
+  const atm = c?.iv ?? OP.hv[OP_SUBY[OP.und]] ?? 0.4;
+  return { r: tasaOp(), T, patas: OP.est.patas.filter(p => esNum(p.p)).map(p => ({ ...p, iv: p.tipo === "A" ? null : (estOpcion(p.tipo, p.k)?.iv || atm) })) };
+}
+// Resultado (todas las patas, en pesos) si el subyacente vale X: al vencimiento o hoy.
+function estValor(X, hoyT, ctx) {
+  let v = 0;
+  for (const p of ctx.patas) {
+    let x;
+    if (p.tipo === "A") x = X;
+    else if (!hoyT || !ctx.T || X <= 0) x = p.tipo === "C" ? Math.max(X - p.k, 0) : Math.max(p.k - X, 0);
+    else x = bsPrecio(X, p.k, ctx.T, ctx.r, p.iv, p.tipo === "C");
+    v += p.lado * (x - p.p) * p.q * LOTE;
+  }
+  return v;
+}
+
+function pintarEstrategia() {
+  const sp = spotOp(OP.und), patas = OP.est.patas.filter(p => esNum(p.p));
+  if (!sp || !patas.length) { $("estResumen").innerHTML = ""; $("estChart").innerHTML = `<p class="hint">Sin patas con precio.</p>`; return; }
+  const S = sp.p, neto = patas.reduce((a, p) => a + p.lado * p.p * p.q * LOTE, 0), ctx = estCtx();
+  // Máximos y mínimos sobre una grilla amplia; si la curva sigue subiendo (o bajando) más allá, es ilimitada.
+  const xs = [0, ...patas.filter(p => p.k).map(p => p.k)];
+  for (let i = 1; i <= 400; i++) xs.push(S * 3 * i / 400);
+  const vals = xs.map(x => estValor(x, false, ctx));
+  const pend = estValor(S * 6, false, ctx) - estValor(S * 5, false, ctx);
+  const maxG = pend > 1e-6 ? Infinity : Math.max(...vals), maxP = pend < -1e-6 ? -Infinity : Math.min(...vals);
+  // Puntos de equilibrio: cambios de signo en una grilla fina.
+  const be = [];
+  for (let i = 0; i <= 600; i++) {
+    const a = S * 3 * i / 600, b = S * 3 * (i + 1) / 600, va = estValor(a, false, ctx), vb = estValor(b, false, ctx);
+    if (va === 0 && i) be.push(a); else if (va * vb < 0) be.push(a + (b - a) * va / (va - vb));
+  }
+  const dias = Math.max(1, Math.round((Date.parse(OP.vto) - Date.parse(hoy())) / 864e5));
+  const plata = (v) => v === Infinity ? "Ilimitada" : v === -Infinity ? "Ilimitada" : `$ ${num(Math.abs(v), 0)}`;
+  const rend = neto > 0 && Number.isFinite(maxG) && maxG > 0 ? maxG / neto : null;
+  $("estResumen").innerHTML = [
+    [neto >= 0 ? "Costo (débito)" : "Cobrás (crédito)", `<span class="num">$ ${num(Math.abs(neto), 0)}</span>`],
+    ["Ganancia máxima", `<span class="num">${plata(maxG)}</span>`],
+    ["Pérdida máxima", `<span class="num">${maxP >= 0 ? "Sin pérdida" : plata(maxP)}</span>`],
+    ["Equilibrio", be.length ? be.map(b => `<span class="num">${num(b, 0)}</span> (${b >= S ? "+" : ""}${pct(b / S - 1, 1)})`).join(" · ") : "—"],
+    ["Rendimiento máximo", rend != null ? `<span class="num">${pct(rend, 1)}</span> en ${dias} días · TNA ${pct(rend * 365 / dias, 0)}` : "—"],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+  chart($("estChart"), [], { draw: (el) => dibujarEstrategia(el, S, be, ctx) });
+}
+
+function dibujarEstrategia(el, S, be, ctx) {
+  if (!el.clientWidth) return;
+  const ks = OP.est.patas.filter(p => p.k).map(p => p.k);
+  const x0 = Math.min(S, ...ks) * 0.75, x1 = Math.max(S, ...ks) * 1.25, n = 240;
+  const X = Array.from({ length: n + 1 }, (_, i) => x0 + (x1 - x0) * i / n);
+  const venc = X.map(x => estValor(x, false, ctx)), hoyV = X.map(x => estValor(x, true, ctx));
+  const W = el.clientWidth, H = 340, L = 70, R = 16, T = 14, B_ = 28, pw = W - L - R, ph = H - T - B_;
+  const tk = niceTicks(Math.min(0, ...venc, ...hoyV), Math.max(0, ...venc, ...hoyV), 5), lo = tk[0], hi = tk.at(-1);
+  const x = (v) => L + (v - x0) / (x1 - x0) * pw, y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Resultado de la estrategia">`;
+  for (const t of tk) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${num(t, 0)}</text>`;
+  for (const t of niceTicks(x0, x1, 6).filter(t => t >= x0 && t <= x1)) s += `<text class="ax" x="${x(t)}" y="${H - 8}" text-anchor="middle">${num(t)}</text>`;
+  // Zonas de ganancia (verde) y pérdida (rojo) bajo la curva al vencimiento.
+  for (let i = 0; i < n; i++) {
+    const v = (venc[i] + venc[i + 1]) / 2, c = v >= 0 ? "rgba(34,227,107,.13)" : "rgba(255,59,59,.13)";
+    s += `<path d="M${x(X[i])},${y(0)}L${x(X[i])},${y(venc[i])}L${x(X[i + 1])},${y(venc[i + 1])}L${x(X[i + 1])},${y(0)}Z" fill="${c}"/>`;
+  }
+  s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  s += `<line class="mk" x1="${x(S)}" x2="${x(S)}" y1="${T}" y2="${T + ph}"/><text class="mkl" x="${x(S) + 4}" y="${T + 10}">${OP_SUBY[OP.und]} ${num(S, 0)}</text>`;
+  const linea = (vs) => vs.map((v, i) => `${i ? "L" : "M"}${x(X[i]).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  s += `<path d="${linea(hoyV)}" fill="none" stroke="var(--cyan)" stroke-width="1.3" stroke-dasharray="5 4"/>`;
+  s += `<path d="${linea(venc)}" fill="none" stroke="#ffb000" stroke-width="1.8"/>`;
+  for (const b of be.filter(b => b >= x0 && b <= x1)) s += `<circle cx="${x(b)}" cy="${y(0)}" r="3.5" style="fill:#000;stroke:#ffb000;stroke-width:1.5"/>`;
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  el.onpointermove = (e) => {
+    const px = e.clientX - svg.getBoundingClientRect().left, i = Math.max(0, Math.min(n, Math.round((px - L) / pw * n)));
+    xh.setAttribute("x1", x(X[i])); xh.setAttribute("x2", x(X[i])); xh.setAttribute("visibility", "visible");
+    const c = (v) => `<b style="color:${v >= 0 ? "var(--up)" : "var(--down)"}">${v >= 0 ? "+" : "−"}$ ${num(Math.abs(v), 0)}</b>`;
+    tip.innerHTML = `<b>${OP_SUBY[OP.und]} ${num(X[i], 0)}</b> <span class="muted">${X[i] >= S ? "+" : ""}${pct(X[i] / S - 1, 1)}</span>`
+      + `<br><span style="color:#ffb000">Al vencimiento</span> ${c(venc[i])}<br><span style="color:var(--cyan)">Hoy</span> ${c(hoyV[i])}`;
+    tip.hidden = false;
+    ubicarTip(tip, x(X[i]), W);
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
+}
+
+// Llamada desde pintarOpciones: si cambió la cadena, se rearma la estrategia elegida.
+function estEnCadena() {
+  const clave = `${OP.und}|${OP.vto}`;
+  if (OP.est.clave !== clave) {
+    OP.est.clave = clave;
+    aplicarPreset(OP.est.preset);
+    pintarPatas();
+  }
+  pintarEstrategia();
+}
+
+$("estPresets").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-p]");
+  if (!b) return;
+  aplicarPreset(b.dataset.p); pintarPatas(); pintarEstrategia();
+});
+$("estPatas").addEventListener("change", (e) => {
+  const t = e.target.closest("[data-f]");
+  if (!t) return;
+  const p = OP.est.patas[+t.dataset.i], f = t.dataset.f;
+  if (f === "lado") p.lado = +t.value;
+  else if (f === "tipo") { p.tipo = t.value; if (p.tipo === "A") p.k = null; else if (p.k == null) p.k = estStrikes().reduce((a, k) => Math.abs(k - spotOp(OP.und).p) < Math.abs(a - spotOp(OP.und).p) ? k : a); }
+  else if (f === "k") p.k = +t.value;
+  else if (f === "q") p.q = Math.max(1, Math.round(+t.value) || 1);
+  else if (f === "p") { const v = parseFloat(String(t.value).replace(",", ".")); p.p = esNum(v) ? v : null; }
+  if (f === "lado" || f === "tipo" || f === "k") p.p = precioMercado(p);   // cambia el instrumento: precio de mercado
+  OP.est.preset = null;
+  pintarPatas(); pintarEstrategia();
+});
+$("estPatas").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-del]");
+  if (!b) return;
+  OP.est.patas.splice(+b.dataset.del, 1); OP.est.preset = null;
+  pintarPatas(); pintarEstrategia();
+});
+$("estAgregar").addEventListener("click", () => {
+  const S = spotOp(OP.und)?.p, ks = estStrikes();
+  const p = { lado: 1, tipo: "C", k: ks.reduce((a, k) => Math.abs(k - S) < Math.abs(a - S) ? k : a, ks[0]), q: 1 };
+  p.p = precioMercado(p);
+  OP.est.patas.push(p); OP.est.preset = null;
+  pintarPatas(); pintarEstrategia();
+});
+$("estPrecios").addEventListener("click", () => {
+  for (const p of OP.est.patas) p.p = precioMercado(p);
+  pintarPatas(); pintarEstrategia();
+});
 
 let opPendiente = false;
 function opEnVivo() {
