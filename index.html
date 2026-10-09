@@ -3655,10 +3655,12 @@ function generarCombinaciones(tipo, S) {
     if (tipo === "bear") out.push([P(1, "V", k2), P(-1, "V", k1)]);
     if (tipo === "ratio") out.push([P(1, "C", k1), P(-1, "C", k2, 2)]);
   }));
-  // Strangle: con distancia elegida, el put y el call a esa cantidad de bases del precio (uno de cada lado);
-  // con "Todas", cualquier combinación hasta 6 bases por lado.
+  // Strangle: put debajo del precio y call arriba. Con distancia elegida, todos los pares separados por esa
+  // cantidad de bases (el precio queda en el medio, más cerca de una punta o de la otra); con "Todas",
+  // cualquier combinación hasta 6 bases por lado.
   if (tipo === "strangle") {
-    if (CMP.ancho) { const kp = de.at(-CMP.ancho), kc = ab[CMP.ancho - 1]; if (kp && kc) out.push([P(1, "V", kp), P(1, "C", kc)]); }
+    const kss = estStrikes();
+    if (CMP.ancho) kss.forEach((kp, i) => { const kc = kss[i + CMP.ancho]; if (kc && kp < S && kc > S && kp >= S * 0.75 && kc <= S * 1.3) out.push([P(1, "V", kp), P(1, "C", kc)]); });
     else de.slice(-6).forEach(kp => ab.slice(0, 6).forEach(kc => out.push([P(1, "V", kp), P(1, "C", kc)])));
   }
   if (tipo === "collar") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "A"), P(1, "V", kp), P(-1, "C", kc)])));
@@ -3673,9 +3675,9 @@ function pintarComparador(base = estBase(), ya = false) {
   CMP.t = Date.now();
   ponerHTML($("cmpTipos"), CMP_TIPOS.map(([id, n]) => `<button type="button" class="ghost${id === CMP.tipo ? " on" : ""}" data-t="${id}">${n}</button>`).join(""));
   if (!base.S) { $("cmpTabla").innerHTML = ""; return; }
-  const strg = CMP.tipo === "strangle", maxD = strg ? 6 : 4;
+  const strg = CMP.tipo === "strangle", maxD = strg ? 8 : 4;
   if (CMP.ancho > maxD) CMP.ancho = 0;
-  ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">${strg ? "Bases desde el precio, por lado" : "Distancia entre bases"}</span>`
+  ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">${strg ? "Distancia entre put y call (bases)" : "Distancia entre bases"}</span>`
     + Array.from({ length: maxD + 1 }, (_, d) => d).map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
   CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps), cb: caraBarata(ps) }));
   const conCB = CMP.tipo === "ratio";
