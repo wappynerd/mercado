@@ -3236,12 +3236,15 @@ function pintarOpciones() {
   const atm = strikes.reduce((a, k) => Math.abs(k - sp.p) < Math.abs(a - sp.p) ? k : a, strikes[0]);
   const ivAtm = filas.filter(o => o.k === atm && o.iv).map(o => o.iv), ivA = ivAtm.length ? ivAtm.reduce((a, b) => a + b) / ivAtm.length : null;
   const hv = OP.hv[tk], dias = Math.round((Date.parse(OP.vto) - Date.parse(hoy())) / 864e5);
-  const vc = filas.filter(o => o.call).reduce((a, o) => a + o.v, 0), vp = filas.filter(o => !o.call).reduce((a, o) => a + o.v, 0);
+  // Con CGR, el volumen es el monto operado en vivo; sin token, los contratos de Data912 (vienen con retraso).
+  const enVivo = filas.some(o => esNum(o.ev)), vol = (o) => enVivo ? (o.ev || 0) : o.v;
+  const fVol = (v) => enVivo ? `$ ${num(v / 1e6, v < 1e7 ? 2 : 1)} M` : num(v);
+  const vc = filas.filter(o => o.call).reduce((a, o) => a + vol(o), 0), vp = filas.filter(o => !o.call).reduce((a, o) => a + vol(o), 0);
   $("opStrip").innerHTML = [
     [tk, `<span class="num">${num(sp.p, 2)}</span> ${sp.var1 != null ? pill(sp.var1, pct(Math.abs(sp.var1), 2), 1) : ""}`],
     ["Vencimiento", `<span class="num">${fDia(OP.vto)}</span> · faltan ${dias} ${dias === 1 ? "día" : "días"}.`],
     ["Vol. implícita ATM", `<span class="num">${pct(ivA, 1)}</span> en el strike ${num(atm)}` + (hv ? ` · histórica 20 ruedas ${pct(hv, 1)}.` : ".")],
-    ["Volumen", `Calls <span class="num">${num(vc)}</span> · puts <span class="num">${num(vp)}</span>` + (vc ? ` · put/call ${num(vp / vc, 2)}.` : ".")],
+    [enVivo ? "Monto operado" : "Volumen (contratos)", `Calls <span class="num">${fVol(vc)}</span> · puts <span class="num">${fVol(vp)}</span>` + (vc ? ` · put/call ${num(vp / vc, 2)}.` : ".")],
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
 
   // Cadena: calls | strike | puts. Dentro del dinero, sombreado; el precio del subyacente entre los strikes.
@@ -3256,11 +3259,12 @@ function pintarOpciones() {
       return `<td${cls ? ` class="${cls}"` : ""}${fl ? ` style="animation-delay:-${dt}ms"` : ""}>${v}</td>`;
     };
     const ult = o.last == null ? "—" : `<span class="${o.chg > 0 ? "up" : o.chg < 0 ? "dn" : ""}">${fOp(o.last)}</span>`;
-    return celda(num(o.v)) + celda(fOp(o.bid), "bid") + celda(ult, "mid") + celda(fOp(o.ask), "ask")
+    return celda(enVivo ? (esNum(o.ev) ? num(o.ev / 1e6, o.ev < 1e7 ? 2 : 1) : "—") : num(o.v)) + celda(fOp(o.bid), "bid") + celda(ult, "mid") + celda(fOp(o.ask), "ask")
       + celda(o.iv ? pct(o.iv, 1) : "—") + celda(o.delta != null ? num(o.delta, 2) : "—");
   };
+  const volT = enVivo ? "Monto $M" : "Vol";
   let h = `<thead><tr class="grp"><th colspan="6">Calls</th><th></th><th colspan="6">Puts</th></tr>
-    <tr><th>Vol</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>Vol</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th></tr></thead><tbody>`;
+    <tr><th>${volT}</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th><th class="k">Strike</th><th>${volT}</th><th>Bid</th><th>Último</th><th>Ask</th><th>VI</th><th>Δ</th></tr></thead><tbody>`;
   let marcado = false;
   for (const k of strikes) {
     if (!marcado && k > sp.p) { h += `<tr class="spot"><td colspan="13">▸ ${tk} ${num(sp.p, 2)}</td></tr>`; marcado = true; }
@@ -3331,6 +3335,7 @@ function aplicarCGR(o, md, flash) {
     o.v += la.size || 0;
   }
   o.laDate = la.date;
+  if (esNum(md.EV)) o.ev = md.EV;   // monto operado en pesos, exacto y en vivo
   o.last = la.price;
   o.bid = md.BI?.[0]?.price ?? null;
   o.ask = md.OF?.[0]?.price ?? null;
