@@ -3247,6 +3247,9 @@ function cadenaOp() {
 }
 
 const fOp = (v) => v == null ? "—" : num(v, v < 10 ? 3 : v < 100 ? 2 : 1);
+// Reemplaza el contenido solo si cambió: con CGR la pestaña se repinta varias veces por segundo y un botón
+// reemplazado entre que se aprieta y se suelta pierde el clic.
+const ponerHTML = (el, h) => { if (el._h !== h) { el.innerHTML = h; el._h = h; } };
 
 function pintarOpciones() {
   if (!OP.cargado) return;
@@ -3254,10 +3257,10 @@ function pintarOpciones() {
   // Activos: los que tienen opciones, primero los de más volumen.
   const unds = [...new Set(OP.d.map(o => o.und))].map(u => ({ u, vol: OP.d.filter(o => o.und === u).reduce((a, o) => a + o.v * (o.last || 0), 0), n: OP.d.filter(o => o.und === u).length }))
     .sort((a, b) => b.vol - a.vol || b.n - a.n);
-  $("opActivos").innerHTML = unds.map(({ u }) => `<button type="button" class="ghost${u === OP.und ? " on" : ""}" data-u="${u}">${OP_SUBY[u]}</button>`).join("");
+  ponerHTML($("opActivos"), unds.map(({ u }) => `<button type="button" class="ghost${u === OP.und ? " on" : ""}" data-u="${u}">${OP_SUBY[u]}</button>`).join(""));
   const vtos = [...new Set(OP.d.filter(o => o.und === OP.und).map(o => o.vto))].sort();
   if (!vtos.includes(OP.vto)) OP.vto = vtos[0];
-  $("opVtos").innerHTML = vtos.map(v => `<button type="button" class="ghost${v === OP.vto ? " on" : ""}" data-v="${v}">${fDia(v).slice(0, 5)}</button>`).join("");
+  ponerHTML($("opVtos"), vtos.map(v => `<button type="button" class="ghost${v === OP.vto ? " on" : ""}" data-v="${v}">${fDia(v).slice(0, 5)}</button>`).join(""));
 
   const { sp, filas, T } = cadenaOp(), tk = OP_SUBY[OP.und];
   if (!sp || !filas.length) { $("opTabla").innerHTML = `<tbody><tr><td>Sin datos del subyacente o de la cadena.</td></tr></tbody>`; return; }
@@ -3424,7 +3427,7 @@ function aplicarPreset(id) {
 
 function pintarPatas() {
   const ks = estStrikes();
-  $("estPresets").innerHTML = EST_PRESETS.map(([id, n]) => `<button type="button" class="ghost${id === OP.est.preset ? " on" : ""}" data-p="${id}">${n}</button>`).join("");
+  ponerHTML($("estPresets"), EST_PRESETS.map(([id, n]) => `<button type="button" class="ghost${id === OP.est.preset ? " on" : ""}" data-p="${id}">${n}</button>`).join(""));
   let h = `<thead><tr><th>Operación</th><th>Tipo</th><th>Strike</th><th>Lotes</th><th>Precio</th><th></th></tr></thead><tbody>`;
   OP.est.patas.forEach((p, i) => {
     const sel = (f, ops) => `<select data-i="${i}" data-f="${f}"${f === "k" && p.tipo === "A" ? " disabled" : ""}>${ops.map(([v, t]) => `<option value="${v}"${String(p[f]) === String(v) ? " selected" : ""}>${t}</option>`).join("")}</select>`;
@@ -3532,8 +3535,10 @@ function generarCombinaciones(tipo, S) {
 
 const basesTexto = (ps) => ps.map(p => `<span class="${p.lado > 0 ? "up" : "dn"}">${p.lado > 0 ? "+" : "−"}${p.q > 1 ? p.q : ""}${p.tipo === "A" ? OP_SUBY[OP.und] : (p.tipo === "C" ? "C" : "V") + num(p.k)}</span>`).join(" ");
 
-function pintarComparador(base = estBase()) {
-  $("cmpTipos").innerHTML = CMP_TIPOS.map(([id, n]) => `<button type="button" class="ghost${id === CMP.tipo ? " on" : ""}" data-t="${id}">${n}</button>`).join("");
+function pintarComparador(base = estBase(), ya = false) {
+  if (!ya && Date.now() - (CMP.t || 0) < 3000) return;
+  CMP.t = Date.now();
+  ponerHTML($("cmpTipos"), CMP_TIPOS.map(([id, n]) => `<button type="button" class="ghost${id === CMP.tipo ? " on" : ""}" data-t="${id}">${n}</button>`).join(""));
   if (!base.S) { $("cmpTabla").innerHTML = ""; return; }
   CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)) }));
   const val = (f) => {
@@ -3556,7 +3561,7 @@ function pintarComparador(base = estBase()) {
       <td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td><td>${pct(m.prob, 0)}</td></tr>`;
   });
   if (!CMP.filas.length) h += `<tr><td colspan="8" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
-  $("cmpTabla").innerHTML = h + "</tbody>";
+  ponerHTML($("cmpTabla"), h + "</tbody>");
 }
 
 function dibujarEstrategia(el, S, be, ctx) {
@@ -3602,7 +3607,12 @@ function estEnCadena() {
   const clave = `${OP.und}|${OP.vto}`;
   if (OP.est.clave !== clave) {
     OP.est.clave = clave;
-    aplicarPreset(OP.est.preset);
+    // Una estrategia armada a mano se conserva si sus bases existen en la nueva cadena (con precios nuevos);
+    // si no, se rearma la elegida (o un lanzamiento cubierto).
+    const ks = estStrikes(), propia = !OP.est.preset && OP.est.patas.length && OP.est.patas.every(p => p.k == null || ks.includes(p.k));
+    if (propia) OP.est.patas.forEach(p => { p.p = precioMercado(p); });
+    else aplicarPreset(OP.est.preset || "cubierto");
+    CMP.t = 0;   // el comparador se rearma ya con la cadena nueva
     pintarPatas();
   }
   pintarEstrategia();
@@ -3655,13 +3665,14 @@ $("estAgregar").addEventListener("click", () => {
 });
 $("cmpTipos").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-t]");
-  if (b) { CMP.tipo = b.dataset.t; pintarComparador(); }
+  if (b) { CMP.tipo = b.dataset.t; pintarComparador(undefined, true); }
 });
-$("cmpTabla").addEventListener("click", (e) => {
+$("cmpTabla").addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
   const th = e.target.closest("th[data-o]");
   if (th) {
     if (CMP.orden === th.dataset.o) CMP.desc = !CMP.desc; else { CMP.orden = th.dataset.o; CMP.desc = !["be", "neto"].includes(th.dataset.o); }
-    pintarComparador(); return;
+    pintarComparador(undefined, true); return;
   }
   const tr = e.target.closest("tr[data-i]");
   if (!tr) return;
