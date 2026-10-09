@@ -526,6 +526,7 @@
       <div class="toolbar"><span class="rangos" id="estPresets" style="flex-wrap:wrap"></span></div>
       <div class="card table-wrap"><table class="btable" id="estPatas"></table></div>
       <div class="toolbar" style="margin:8px 0"><span class="rangos"><button type="button" class="ghost" id="estAbajo">◀ Bajar</button><button type="button" class="ghost" id="estArriba">Subir ▶</button></span>
+        <span class="rangos"><button type="button" class="ghost" id="estAbrir">◀ Abrir ▶</button><button type="button" class="ghost" id="estCerrar">▶ Cerrar ◀</button></span>
         <label for="estSalto" style="margin:0 4px 0 6px">de a</label><input id="estSalto" type="number" min="1" max="10" step="1" value="1" style="width:56px;flex:none"><label for="estSalto" style="margin:0 10px 0 4px">bases</label><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
       <div class="headlines" id="estResumen" style="margin-top:0"></div>
       <article class="card mcard" style="margin-top:8px">
@@ -3637,7 +3638,7 @@ function dibujarHistEst(el, h) {
 // Todas las combinaciones de cada estrategia con las bases de la cadena (a precios de mercado: compra al ask,
 // venta al bid; sin punta, no entra). Se ordena tocando la columna; un clic en la fila la carga en el armador.
 const CMP = { tipo: "cubierto", orden: "prob", desc: true, ancho: 0, filas: [] };
-const CMP_CON_ANCHO = ["bull", "bear", "ratio", "mariposa"];
+const CMP_CON_ANCHO = ["bull", "bear", "ratio", "mariposa", "strangle"];
 const CMP_TIPOS = [["cubierto", "Lanzamiento cubierto"], ["bull", "Bull spread"], ["bear", "Bear spread"], ["ratio", "Ratio"], ["straddle", "Straddle"],
   ["strangle", "Strangle"], ["mariposa", "Mariposa"], ["collar", "Collar"], ["call", "Call"], ["put", "Put"]];
 
@@ -3654,7 +3655,12 @@ function generarCombinaciones(tipo, S) {
     if (tipo === "bear") out.push([P(1, "V", k2), P(-1, "V", k1)]);
     if (tipo === "ratio") out.push([P(1, "C", k1), P(-1, "C", k2, 2)]);
   }));
-  if (tipo === "strangle") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "V", kp), P(1, "C", kc)])));
+  // Strangle: con distancia elegida, el put y el call a esa cantidad de bases del precio (uno de cada lado);
+  // con "Todas", cualquier combinación hasta 6 bases por lado.
+  if (tipo === "strangle") {
+    if (CMP.ancho) { const kp = de.at(-CMP.ancho), kc = ab[CMP.ancho - 1]; if (kp && kc) out.push([P(1, "V", kp), P(1, "C", kc)]); }
+    else de.slice(-6).forEach(kp => ab.slice(0, 6).forEach(kc => out.push([P(1, "V", kp), P(1, "C", kc)])));
+  }
   if (tipo === "collar") de.slice(-3).forEach(kp => ab.slice(0, 3).forEach(kc => out.push([P(1, "A"), P(1, "V", kp), P(-1, "C", kc)])));
   if (tipo === "mariposa") ks.forEach((k, i) => (CMP.ancho ? [CMP.ancho] : [1, 2]).forEach(d => { if (ks[i - d] && ks[i + d]) out.push([P(1, "C", ks[i - d]), P(-1, "C", k, 2), P(1, "C", ks[i + d])]); }));
   return out.map(ps => ps.map(p => ({ ...p, p: precioMercado(p) }))).filter(ps => ps.every(p => esNum(p.p) && p.p > 0));
@@ -3667,8 +3673,10 @@ function pintarComparador(base = estBase(), ya = false) {
   CMP.t = Date.now();
   ponerHTML($("cmpTipos"), CMP_TIPOS.map(([id, n]) => `<button type="button" class="ghost${id === CMP.tipo ? " on" : ""}" data-t="${id}">${n}</button>`).join(""));
   if (!base.S) { $("cmpTabla").innerHTML = ""; return; }
-  ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">Distancia entre bases</span>`
-    + [0, 1, 2, 3, 4].map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
+  const strg = CMP.tipo === "strangle", maxD = strg ? 6 : 4;
+  if (CMP.ancho > maxD) CMP.ancho = 0;
+  ponerHTML($("cmpAncho"), CMP_CON_ANCHO.includes(CMP.tipo) ? `<span class="muted" style="margin-right:8px;align-self:center">${strg ? "Bases desde el precio, por lado" : "Distancia entre bases"}</span>`
+    + Array.from({ length: maxD + 1 }, (_, d) => d).map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
   CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps), cb: caraBarata(ps) }));
   const conCB = CMP.tipo === "ratio";
   const conAncho = CMP.filas.some(f => f.ancho);
@@ -3782,6 +3790,24 @@ function moverBases(d, soloI) {
 const saltoBases = () => Math.max(1, Math.min(10, Math.round(+$("estSalto").value) || 1));
 $("estAbajo").addEventListener("click", () => moverBases(-saltoBases()));
 $("estArriba").addEventListener("click", () => moverBases(saltoBases()));
+// Abrir / cerrar: la pata de strike más bajo baja y la más alta sube (o al revés); las del medio quedan.
+// Sirve para ensanchar un strangle, un spread, un ratio o las alas de una mariposa. Al cerrar no se cruzan.
+function abrirBases(d) {
+  const ks = estStrikes(), conK = OP.est.patas.filter(p => p.k != null);
+  if (conK.length < 2) return;
+  const lo = Math.min(...conK.map(p => p.k)), hi = Math.max(...conK.map(p => p.k));
+  if (lo === hi) return;
+  const nuevo = (p) => p.k === lo ? ks[ks.indexOf(p.k) - d] : p.k === hi ? ks[ks.indexOf(p.k) + d] : p.k;
+  const ns = conK.map(nuevo);
+  if (ns.some(k => k == null)) return;
+  const nlo = Math.min(...ns), nhi = Math.max(...ns), medio = conK.filter(p => p.k !== lo && p.k !== hi).map(p => p.k);
+  if (nlo >= nhi || medio.some(k => k <= nlo || k >= nhi)) return;
+  conK.forEach((p, j) => { if (ns[j] !== p.k) { p.k = ns[j]; p.p = precioMercado(p); } });
+  OP.est.preset = null;
+  pintarPatas(); pintarEstrategia();
+}
+$("estAbrir").addEventListener("click", () => abrirBases(saltoBases()));
+$("estCerrar").addEventListener("click", () => abrirBases(-saltoBases()));
 $("estPatas").addEventListener("click", (e) => {
   const m = e.target.closest("button[data-mov]");
   if (m) { moverBases(+m.dataset.mov * saltoBases(), +m.dataset.i); return; }
