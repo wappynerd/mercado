@@ -201,6 +201,8 @@
   #estPatas input { width: 100px; }
   #estPatas select:focus, #estPatas input:focus { outline: none; border-color: var(--hl); }
   #estPatas button { padding: 4px 9px; }
+  #estPatas .paso { display: inline-flex; align-items: center; gap: 4px; }
+  #estPatas .paso button { padding: 4px 7px; }
   #cmpTabla th:first-child, #cmpTabla td:first-child { width: auto; text-align: left; }
   #cmpTabla th[data-o] { cursor: pointer; } #cmpTabla th[data-o]:hover { color: var(--text); }
   #cmpTabla th.on { color: #000; background: var(--hl); }
@@ -522,7 +524,7 @@
       <div class="sec"><h2>Estrategias</h2></div>
       <div class="toolbar"><span class="rangos" id="estPresets" style="flex-wrap:wrap"></span></div>
       <div class="card table-wrap"><table class="btable" id="estPatas"></table></div>
-      <div class="toolbar" style="margin:8px 0"><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
+      <div class="toolbar" style="margin:8px 0"><span class="rangos"><button type="button" class="ghost" id="estAbajo">◀ Base abajo</button><button type="button" class="ghost" id="estArriba">Base arriba ▶</button></span><button type="button" class="ghost" id="estAgregar">+ Pata</button><button type="button" class="ghost" id="estPrecios">Precios de mercado</button></div>
       <div class="headlines" id="estResumen" style="margin-top:0"></div>
       <article class="card mcard" style="margin-top:8px">
         <div class="mhead"><h3>Resultado · $ por lote de 100 acciones</h3>
@@ -3427,7 +3429,7 @@ function pintarPatas() {
   OP.est.patas.forEach((p, i) => {
     const sel = (f, ops) => `<select data-i="${i}" data-f="${f}"${f === "k" && p.tipo === "A" ? " disabled" : ""}>${ops.map(([v, t]) => `<option value="${v}"${String(p[f]) === String(v) ? " selected" : ""}>${t}</option>`).join("")}</select>`;
     h += `<tr><td>${sel("lado", [[1, "Compra"], [-1, "Venta"]])}</td><td>${sel("tipo", [["C", "Call"], ["V", "Put"], ["A", "Acción"]])}</td>
-      <td>${p.tipo === "A" ? `<span class="muted">${OP_SUBY[OP.und]}</span>` : sel("k", ks.map(k => [k, num(k)]))}</td>
+      <td>${p.tipo === "A" ? `<span class="muted">${OP_SUBY[OP.und]}</span>` : `<span class="paso"><button type="button" class="ghost" data-mov="-1" data-i="${i}" aria-label="Base abajo">◀</button>${sel("k", ks.map(k => [k, num(k)]))}<button type="button" class="ghost" data-mov="1" data-i="${i}" aria-label="Base arriba">▶</button></span>`}</td>
       <td><input data-i="${i}" data-f="q" type="number" min="1" step="1" value="${p.q}"></td>
       <td><input data-i="${i}" data-f="p" type="number" min="0" step="0.01" value="${p.p != null ? +p.p.toFixed(3) : ""}"></td>
       <td><button type="button" class="ghost" data-del="${i}" aria-label="Borrar pata">✕</button></td></tr>`;
@@ -3624,7 +3626,21 @@ $("estPatas").addEventListener("change", (e) => {
   OP.est.preset = null;
   pintarPatas(); pintarEstrategia();
 });
+// Corre patas de a una base (strike), manteniendo la estructura; si alguna se sale de la cadena, no se mueve.
+function moverBases(d, soloI) {
+  const ks = estStrikes();
+  const patas = OP.est.patas.filter((p, i) => p.k != null && (soloI == null || i === soloI));
+  const nuevos = patas.map(p => ks[ks.indexOf(p.k) + d]);
+  if (!patas.length || nuevos.some(k => k == null)) return;
+  patas.forEach((p, j) => { p.k = nuevos[j]; p.p = precioMercado(p); });
+  OP.est.preset = null;
+  pintarPatas(); pintarEstrategia();
+}
+$("estAbajo").addEventListener("click", () => moverBases(-1));
+$("estArriba").addEventListener("click", () => moverBases(1));
 $("estPatas").addEventListener("click", (e) => {
+  const m = e.target.closest("button[data-mov]");
+  if (m) { moverBases(+m.dataset.mov, +m.dataset.i); return; }
   const b = e.target.closest("button[data-del]");
   if (!b) return;
   OP.est.patas.splice(+b.dataset.del, 1); OP.est.preset = null;
