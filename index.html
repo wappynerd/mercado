@@ -203,6 +203,7 @@
   #estPatas button { padding: 4px 9px; }
   #estPatas .paso { display: inline-flex; align-items: center; gap: 4px; }
   #estPatas .paso button { padding: 4px 7px; }
+  #estHist .tip span.up { color: var(--up); } #estHist .tip span.dn { color: var(--down); }
   #cmpTabla th:first-child, #cmpTabla td:first-child { width: auto; text-align: left; }
   #cmpTabla th[data-o] { cursor: pointer; } #cmpTabla th[data-o]:hover { color: var(--text); }
   #cmpTabla th.on { color: #000; background: var(--hl); }
@@ -531,6 +532,10 @@
         <div class="mhead"><h3>Resultado · $ por lote de 100 acciones</h3>
           <span class="legend" style="margin:0"><span><span class="swatch" style="--c:#ffb000"></span>Al vencimiento</span><span><span class="swatch" style="--c:var(--cyan)"></span>Hoy</span></span></div>
         <div class="chart" id="estChart" style="height:340px"></div>
+      </article>
+      <article class="card mcard" style="margin-top:8px">
+        <div class="mhead"><h3 id="estHistTit">Costo histórico · $ por lote</h3><span class="rangos" id="estHistModo"></span></div>
+        <div class="chart" id="estHist" style="height:260px"><p class="hint">Cargando la historia…</p></div>
       </article>
 
       <div class="sec"><h2>Comparador de estrategias</h2></div>
@@ -3523,7 +3528,108 @@ function pintarEstrategia() {
     ...(anchoSpread(ctx.patas) ? [["Costo / ancho", `<span class="num">${pct(Math.abs(m.neto) / anchoSpread(ctx.patas), 1)}</span> de $ ${num(anchoSpread(ctx.patas), 0)}${m.neto < 0 ? " (crédito)" : ""}`]] : []),
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
   chart($("estChart"), [], { draw: (el) => dibujarEstrategia(el, S, m.be, ctx) });
+  pintarHistEst();
   pintarComparador(base);
+}
+
+/* ---------- Costo histórico de la estrategia ---------- */
+//
+// Velas de 15 minutos de cada pata (data/opciones.json, que acumula una tarea de GitHub con las de CGR). En
+// cada momento, cada pata vale su último cierre conocido; la serie arranca cuando todas tienen precio. El
+// último punto es el de ahora, con los últimos operados. Para dos opciones del mismo tipo (spread o ratio)
+// se puede ver también la división entre la base cara y la barata.
+const OPH = { d: null, pedido: false, modo: "costo" };
+
+async function cargarHistOp() {
+  if (OPH.pedido) return;
+  OPH.pedido = true;
+  try { OPH.d = await getJSON(`data/opciones.json?t=${Math.floor(Date.now() / 3600000)}`); }
+  catch (e) { console.error("historia opciones", e); OPH.d = { s: {}, u: {} }; }
+  pintarHistEst();
+}
+
+function serieHistEst() {
+  const patas = OP.est.patas.filter(p => p.q > 0);
+  if (!OPH.d || !patas.length) return null;
+  const series = patas.map(p => p.tipo === "A" ? OPH.d.u[OP_SUBY[OP.und]] : OPH.d.s[estOpcion(p.tipo, p.k)?.sym]);
+  if (series.some(x => !x?.length)) return { faltan: patas.filter((p, i) => !series[i]?.length) };
+  const ts = [...new Set(series.flat().map(x => x[0]))].sort();
+  const idx = series.map(() => -1), out = [];
+  for (const t of ts) {
+    series.forEach((se, j) => { while (idx[j] + 1 < se.length && se[idx[j] + 1][0] <= t) idx[j]++; });
+    if (idx.some(i => i < 0)) continue;
+    const px = series.map((se, j) => se[idx[j]][1]);
+    out.push({ t, px });
+  }
+  // Ahora: últimos operados (la acción, a su precio actual).
+  const ahora = patas.map(p => p.tipo === "A" ? spotOp(OP.und)?.p : estOpcion(p.tipo, p.k)?.last);
+  if (ahora.every(v => v > 0)) out.push({ t: "Ahora", px: ahora });
+  const cb = caraBarata(patas.map(p => ({ ...p, p: 1 }))) != null;   // ¿son dos opciones del mismo tipo, opuestas?
+  return {
+    patas, cb,
+    pts: out.map(({ t, px }) => ({
+      t, px,
+      costo: patas.reduce((a, p, j) => a + p.lado * px[j] * p.q * LOTE, 0),
+      ratio: cb ? Math.max(px[0], px[1]) / Math.min(px[0], px[1]) : null,
+    })),
+  };
+}
+
+function pintarHistEst() {
+  const el = $("estHist");
+  if (!el) return;
+  if (!OPH.d) { cargarHistOp(); return; }
+  const h = serieHistEst();
+  ponerHTML($("estHistModo"), h?.cb ? [["costo", "Costo"], ["ratio", "Cara / barata"]].map(([m, t]) => `<button type="button" class="ghost${OPH.modo === m ? " on" : ""}" data-m="${m}">${t}</button>`).join("") : "");
+  if (!h?.cb && OPH.modo === "ratio") OPH.modo = "costo";
+  $("estHistTit").textContent = OPH.modo === "ratio" ? "Base cara / barata · histórico" : "Costo histórico · $ por lote";
+  if (!h) { el.innerHTML = `<p class="hint">Sin patas.</p>`; return; }
+  if (h.faltan) {
+    el.innerHTML = `<p class="hint">Sin historia para ${h.faltan.map(p => p.tipo === "A" ? OP_SUBY[OP.und] : `${p.tipo === "C" ? "C" : "V"}${num(p.k)}`).join(", ")}.</p>`;
+    return;
+  }
+  if (h.pts.length < 2) { el.innerHTML = `<p class="hint">Todavía no hay historia común de las patas.</p>`; return; }
+  chart(el, [], { draw: (e) => dibujarHistEst(e, h) });
+}
+
+function dibujarHistEst(el, h) {
+  if (!el.clientWidth) return;
+  const k = OPH.modo === "ratio" ? "ratio" : "costo", P = h.pts, n = P.length, vs = P.map(p => p[k]);
+  const W = el.clientWidth, H = 260, L = 70, R = 16, T = 14, B_ = 24, pw = W - L - R, ph = H - T - B_;
+  const tk = niceTicks(Math.min(...vs, k === "costo" ? 0 : Infinity), Math.max(...vs, k === "costo" ? 0 : -Infinity), 4), lo = tk[0], hi = tk.at(-1);
+  const x = (i) => L + (n === 1 ? pw / 2 : i * pw / (n - 1)), y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
+  const fmt = (v) => k === "ratio" ? num(v, 2) : `${v < 0 ? "−" : ""}$ ${num(Math.abs(v), 0)}`;
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Historia de la estrategia">`;
+  for (const t of tk) s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${k === "ratio" ? num(t, 1) : num(t, 0)}</text>`;
+  if (k === "costo" && lo < 0) s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  // Un separador y la fecha en cada rueda nueva (sin huecos de noche ni fines de semana).
+  let ult = null, ultX = -99;
+  P.forEach((p, i) => {
+    const dia = p.t === "Ahora" ? null : p.t.slice(0, 10);
+    if (dia && dia !== ult) {
+      if (ult) s += `<line class="mk" x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${T + ph}" style="opacity:.35"/>`;
+      if (x(i) - ultX > 46) { s += `<text class="ax" x="${x(i) + 2}" y="${H - 6}">${fDia(dia).slice(0, 5)}</text>`; ultX = x(i); }
+      ult = dia;
+    }
+  });
+  s += `<path d="${P.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join("")}" fill="none" stroke="#ffb000" stroke-width="1.6"/>`;
+  const u = P.at(-1);
+  s += `<circle cx="${x(n - 1)}" cy="${y(u[k])}" r="3.5" style="fill:#ffb000"/>`;
+  s += `<line class="xh" y1="${T}" y2="${T + ph}" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+  el.innerHTML = s;
+  const svg = el.querySelector("svg"), xh = el.querySelector(".xh"), tip = el.querySelector(".tip");
+  const nom = (p) => p.tipo === "A" ? OP_SUBY[OP.und] : `${p.tipo === "C" ? "C" : "V"}${num(p.k)}`;
+  el.onpointermove = (e) => {
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - svg.getBoundingClientRect().left - L) / pw * (n - 1))));
+    const p = P[i];
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    tip.innerHTML = `<span class="muted">${p.t === "Ahora" ? "Ahora" : `${fDia(p.t.slice(0, 10))} ${p.t.slice(11)}`}</span> · <b>${fmt(p[k])}</b>`
+      + (k === "ratio" ? `<br>Costo ${fmt(p.costo)}` : h.cb ? `<br>Cara / barata ${num(p.ratio, 2)}` : "")
+      + h.patas.map((q, j) => `<br><span class="${q.lado > 0 ? "up" : "dn"}">${q.lado > 0 ? "+" : "−"}${q.q > 1 ? q.q : ""}${nom(q)}</span> ${fOp(p.px[j])}`).join("");
+    tip.hidden = false;
+    ubicarTip(tip, x(i), W);
+  };
+  el.onpointerleave = () => { xh.setAttribute("visibility", "hidden"); tip.hidden = true; };
 }
 
 /* ---------- Comparador de estrategias ---------- */
@@ -3694,6 +3800,10 @@ $("estAgregar").addEventListener("click", () => {
 $("cmpTipos").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-t]");
   if (b) { CMP.tipo = b.dataset.t; pintarComparador(undefined, true); }
+});
+$("estHistModo").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-m]");
+  if (b) { OPH.modo = b.dataset.m; pintarHistEst(); }
 });
 $("cmpAncho").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-a]");
