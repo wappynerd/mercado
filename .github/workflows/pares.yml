@@ -1,7 +1,8 @@
 name: Bancos de la región
 
 # Baja precios y balances de los bancos comparables (Yahoo Finance) y los guarda en data/pares.json,
-# y las acciones y cierres de las empresas argentinas (pestaña Sectores) en data/sectores.json.
+# las acciones y cierres de las empresas argentinas (pestaña Sectores) en data/sectores.json
+# y los ETFs por región y activos macro (pestaña Global Macro) en data/global.json.
 # Corre de lunes a viernes antes de la apertura, a media rueda y después del cierre de Nueva York
 # (9:23, 12:23 y 18:23 de Buenos Aires), y también se puede lanzar a mano.
 on:
@@ -23,14 +24,15 @@ jobs:
       - run: pip install yfinance
       - run: python scripts/pares.py
       - run: python scripts/sectores.py
+      - run: python scripts/global.py
       - name: Guardar si cambió
         run: |
-          if git diff --quiet -- data/pares.json data/sectores.json && [ -z "$(git status --porcelain data)" ]; then
+          if git diff --quiet -- data/pares.json data/sectores.json data/global.json && [ -z "$(git status --porcelain data)" ]; then
             echo "Sin cambios."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data/pares.json data/sectores.json
+            git add data/pares.json data/sectores.json data/global.json
             git commit -m "Bancos de la región al $(date -u +%Y-%m-%d)"
             git pull --rebase
             git push

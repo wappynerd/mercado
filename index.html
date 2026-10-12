@@ -188,6 +188,13 @@
   #secTabla tr.esp td:first-child { padding-left: 28px; }
   #secTabla tr.esp td { font-size: 12px; }
   #secTabla td.heat { color: #fff; }
+  #glTabla th:first-child, #glTabla td:first-child, #glMacro th:first-child, #glMacro td:first-child { width: auto; }
+  #glTabla td.heat { color: #fff; }
+  #glTabla th.on, #glMacro th.on { color: #000; background: var(--hl); }
+  #glTabla tr.grp td, #glMacro tr.grp td { text-align: left; color: var(--accent); font: 700 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; background: var(--panel2); }
+  #glTabla tr.pri td:first-child { color: var(--text); font-weight: 600; }
+  #glTabla td:first-child .nom, #glMacro td:first-child .nom { margin-left: 8px; font-size: 11px; color: var(--muted); }
+  #glMacro td.pos { color: var(--up); } #glMacro td.neg { color: var(--down); }
   #opTabla th, #opTabla td { padding: 5px 8px; }
   #opTabla th:first-child, #opTabla td:first-child { width: auto; text-align: center; color: var(--text); }
   #opTabla td.k, #opTabla th.k { color: #fff; font-weight: 700; background: var(--panel2); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
@@ -289,7 +296,7 @@
       <p>Buenos Aires · Mercado y macro</p>
     </div>
     <nav class="tabs" role="tablist">
-      <button type="button" role="tab" data-tab="mercado"><kbd>1</kbd>Mercado</button>
+      <button type="button" role="tab" data-tab="global"><kbd>1</kbd>Global Macro</button>
       <button type="button" role="tab" data-tab="macro"><kbd>2</kbd>Macro</button>
       <button type="button" role="tab" data-tab="bancos"><kbd>3</kbd>Bancos</button>
       <button type="button" role="tab" data-tab="legislacion"><kbd>4</kbd>Legislación</button>
@@ -303,12 +310,40 @@
     </div>
   </header>
 
-  <!-- ============================ MERCADO ============================ -->
-  <div id="tab-mercado" hidden>
-    <div class="intro">
-      <h2>El tablero en vivo</h2>
-      
+  <!-- ========================== GLOBAL MACRO ========================== -->
+  <div id="tab-global" hidden>
+    <div class="macro-bar">
+      <div class="intro">
+        <h2>Global Macro</h2>
+        <p id="glEstado">Cargando…</p>
+      </div>
+      <div class="toolbar" style="margin:0">
+        <button type="button" class="ghost" id="glRefresh">Actualizar</button>
+      </div>
     </div>
+    <div class="card err-card" id="glError" hidden></div>
+    <div id="glBody" hidden>
+      <div class="headlines" id="glStrip"></div>
+
+      <div class="sec"><h2>Regiones</h2></div>
+      <div class="toolbar"><span class="rangos" id="glPeriodos"><button type="button" class="ghost" data-p="1D">1D</button><button type="button" class="ghost" data-p="1S">1S</button><button type="button" class="ghost" data-p="1M">1M</button><button type="button" class="ghost" data-p="3M">3M</button><button type="button" class="ghost" data-p="YTD">YTD</button><button type="button" class="ghost" data-p="1A">1A</button></span></div>
+      <article class="card mcard"><div class="chart" id="glBarras"></div></article>
+
+      <div class="sec"><h2>Evolución comparada · base 100</h2></div>
+      <article class="card mcard">
+        <div class="mhead"><h3 id="glEvolTit">—</h3><span class="legend" id="glLeyenda" style="margin:0"></span></div>
+        <div class="chart" id="glEvol" style="height:300px"></div>
+      </article>
+
+      <div class="sec"><h2>Mapa de rendimientos por país</h2></div>
+      <div class="card table-wrap"><table class="btable" id="glTabla"></table></div>
+
+      <div class="sec"><h2>Dólar, tasas, commodities y monedas</h2></div>
+      <div class="card table-wrap"><table class="btable" id="glMacro"></table></div>
+      <p class="hint">Acciones: ETFs en dólares (Yahoo Finance). Los rendimientos son de precio. Tasa a 10 años en puntos básicos.</p>
+    </div>
+
+    <div class="sec"><h2>Tablero en vivo</h2></div>
 
     <!-- Login: el token se escribe acá y queda guardado solo en este navegador -->
     <section class="card" id="login">
@@ -1122,7 +1157,7 @@ function pintarDolar(id, vivo, casa) {
     chg: var1 != null ? { v: var1, txt: pct(Math.abs(var1), 2), pol: 0 } : null,
     sub: (vivo ? `<span class="live" title="AL30 / AL30${id === "mep" ? "D" : "C"}">EN VIVO</span> `
       : id === "blue" ? ""
-      : `<span class="live late" title="Dato con demora, no del mercado en vivo. Entrá con tu token en Mercado para verlo en vivo.">DEMORADO</span> `)
+      : `<span class="live late" title="Dato con demora, no del mercado en vivo. Entrá con tu token en Global Macro para verlo en vivo.">DEMORADO</span> `)
       + (brecha != null ? `Brecha con el A3500: <b class="num">${pct(brecha, 1)}</b>` : ""),
     foot: vivo ? "Último operado" : api ? `Último dato: ${new Date(api.fecha).toLocaleString("es-AR", { hour12: false, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "",
   });
@@ -2502,7 +2537,7 @@ async function cargarBancos() {
       $("capChart").innerHTML = `<p class="err">No se pudo bajar la historia de precios: ${e.message}. Probá con Actualizar.</p>`;
     });
     const vivo = store.get("cgr_token") ? "Precios en vivo."
-      : Object.keys(PX).length ? "Precios cada minuto. Con tu token (pestaña Mercado) van en vivo."
+      : Object.keys(PX).length ? "Precios cada minuto. Con tu token (pestaña Global Macro) van en vivo."
       : "Sin precios de hoy: se usan los del último balance.";
     $("bancosEstado").textContent = leida;
   } catch (e) {
@@ -3921,10 +3956,166 @@ setInterval(async () => {
 let opPedida = false;
 
 /* ======================================================================= */
+/*  GLOBAL MACRO: regiones y activos macro (data/global.json, scripts/global.py) */
+/* ======================================================================= */
+
+const GL = { d: null, per: store.get("gl_per") || "1M", cargado: false };
+const GL_PER = ["1D", "1S", "1M", "3M", "YTD", "1A"];
+const GL_COLORES = ["#3d8eff", "#ff6a3d", "#19b37a", "#e0a000", "#c77dff", "#9aa3b0"];
+let glPedida = false;
+
+// Último cierre en o antes del límite del período (para YTD, el cierre del año anterior).
+function glBase(s, per) {
+  const n = s.length;
+  if (n < 2) return null;
+  if (per === "1D") return s[n - 2];
+  const fu = s[n - 1][0], d = new Date(fu + "T00:00:00Z");
+  let lim;
+  if (per === "YTD") lim = `${+fu.slice(0, 4) - 1}-12-31`;
+  else {
+    if (per === "1S") d.setUTCDate(d.getUTCDate() - 7);
+    else if (per === "1M") d.setUTCMonth(d.getUTCMonth() - 1);
+    else if (per === "3M") d.setUTCMonth(d.getUTCMonth() - 3);
+    else d.setUTCFullYear(d.getUTCFullYear() - 1);
+    lim = d.toISOString().slice(0, 10);
+  }
+  for (let i = n - 1; i >= 0; i--) if (s[i][0] <= lim) return s[i];
+  return null;
+}
+// Variación del período: en fracción, o en puntos básicos si es una tasa.
+function glRet(t, per, tipo) {
+  const s = GL.d.series[t];
+  if (!s) return null;
+  const b = glBase(s, per);
+  if (!b || !(b[1] > 0)) return null;
+  const u = s.at(-1)[1];
+  return tipo === "tasa" ? (u - b[1]) * 100 : u / b[1] - 1;
+}
+const glFmtR = (v, tipo) => v == null ? "—" : tipo === "tasa" ? (Math.round(v) === 0 ? "0 pb" : `${v > 0 ? "+" : "−"}${num(Math.abs(v), 0)} pb`) : fmtR(v);
+const glPx = (v, tipo) => tipo === "tasa" ? `${num(v, 2)}%` : num(v, v >= 1000 ? 0 : v >= 10 ? 2 : 4);
+
+async function cargarGlobal() {
+  $("glEstado").textContent = "Cargando…";
+  try {
+    GL.d = await getJSON(`data/global.json?t=${Math.floor(Date.now() / 1800000)}`);
+    GL.cargado = true;
+    $("glError").hidden = true;
+    $("glBody").hidden = false;
+    pintarGlobal();
+    const f = GL.d.fecha;
+    $("glEstado").textContent = `Datos de Yahoo Finance al ${fDia(f.slice(0, 10))} ${f.slice(11, 16)} UTC. Se actualizan tres veces por día hábil.`;
+  } catch (e) {
+    console.error("global", e);
+    $("glError").hidden = false;
+    $("glError").innerHTML = `<h3>No se pudieron cargar los datos globales</h3><p>${e.message}</p>`;
+    $("glEstado").textContent = "";
+  }
+}
+
+function pintarGlobal() {
+  if (!GL.cargado) return;
+  const per = GL.per, D = GL.d;
+  const todos = D.acciones.flatMap(g => g.items.map(x => ({ ...x, grupo: g.grupo })));
+  const principales = todos.filter(x => x.p).map(x => ({ ...x, nombre: x.grupo === "Global" ? x.n : `${x.grupo} · ${x.n}`, r: glRet(x.t, per) }));
+  document.querySelectorAll("#glPeriodos button").forEach(b => b.classList.toggle("on", b.dataset.p === per));
+
+  // Resumen: referencia mundial, mejor y peor región, y EEUU contra el resto desarrollado.
+  const regiones = principales.filter(x => x.t !== "ACWI" && x.r != null).sort((a, b) => b.r - a.r);
+  const mundo = glRet("ACWI", per), spy = glRet("SPY", per), efa = glRet("EFA", per);
+  const nomPer = { "1D": "en el día", "1S": "en la semana", "1M": "en el mes", "3M": "en 3 meses", "YTD": "en el año", "1A": "en 12 meses" }[per];
+  $("glStrip").innerHTML = [
+    ["Mundo (ACWI)", `<span class="num">${fmtR(mundo)}</span> ${nomPer}.`],
+    ["Mejor región", regiones.length ? `<span class="num">${regiones[0].nombre}</span> ${fmtR(regiones[0].r)}.` : "—"],
+    ["Peor región", regiones.length ? `<span class="num">${regiones.at(-1).nombre}</span> ${fmtR(regiones.at(-1).r)}.` : "—"],
+    ["EEUU contra el resto", spy != null && efa != null ? `<span class="num">${spy - efa >= 0 ? "+" : "−"}${num(Math.abs(spy - efa) * 100, 1)} pp</span> sobre desarrollados ex-EEUU.` : "—"],
+  ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
+
+  chart($("glBarras"), [], { draw: (el) => dibujarBarrasGlobal(el, principales.filter(x => x.r != null).sort((a, b) => b.r - a.r)) });
+
+  // Evolución base 100: 1D y 1S son muy cortos para comparar, ahí se muestra 1M.
+  const perE = per === "1D" || per === "1S" ? "1M" : per;
+  const serE = principales.map((x, i) => ({ x, i, s: D.series[x.t] })).filter(o => o.s && glBase(o.s, perE));
+  const fechas = [...new Set(serE.flatMap(o => { const f0 = glBase(o.s, perE)[0]; return o.s.filter(([f]) => f >= f0).map(([f]) => f); }))].sort();
+  const series = serE.map(o => {
+    const b = glBase(o.s, perE), m = new Map(o.s);
+    let ult = null;
+    return {
+      name: o.x.nombre, color: GL_COLORES[o.i % GL_COLORES.length],
+      vals: fechas.map(f => { if (m.has(f)) ult = m.get(f); return f < b[0] || ult == null ? null : ult / b[1] * 100; }),
+    };
+  });
+  $("glEvolTit").textContent = `Desde ${fDia(fechas[0] || "")} · ${perE}`;
+  $("glLeyenda").innerHTML = series.map(s => `<span><span class="swatch" style="--c:${s.color}"></span>${s.name}</span>`).join("");
+  chart($("glEvol"), [], { multi: { xs: fechas, series }, fmt: (v) => num(v, 1), fmtAxis: (v) => num(v, 0), label: "Evolución comparada base 100", h: 300 });
+
+  // Mapa por país: celdas pintadas según el rendimiento, con la escala de su columna.
+  const esc = Object.fromEntries(GL_PER.map(p => [p, Math.max(0.005, ...todos.flatMap(x => { const r = glRet(x.t, p); return r == null ? [] : [Math.abs(r)]; }))]));
+  const celda = (v, p) => {
+    if (v == null) return `<td class="na">—</td>`;
+    const a = Math.min(1, Math.abs(v) / esc[p]) * 0.5;
+    return `<td class="heat" style="background:${v >= 0 ? `rgba(30,212,124,${a.toFixed(3)})` : `rgba(255,77,94,${a.toFixed(3)})`}">${fmtR(v)}</td>`;
+  };
+  let h = `<thead><tr><th>Activo</th><th>Precio US$</th>${GL_PER.map(p => `<th${p === per ? ' class="on"' : ""}>${p}</th>`).join("")}</tr></thead><tbody>`;
+  for (const g of D.acciones) {
+    h += `<tr class="grp"><td colspan="${GL_PER.length + 2}">${g.grupo}</td></tr>`;
+    for (const x of g.items) {
+      const s = D.series[x.t];
+      h += `<tr class="${x.p ? "pri" : ""}"><td>${x.n}<span class="nom">${x.t}</span></td><td>${s ? glPx(s.at(-1)[1]) : "—"}</td>${GL_PER.map(p => celda(glRet(x.t, p), p)).join("")}</tr>`;
+    }
+  }
+  $("glTabla").innerHTML = h + "</tbody>";
+
+  // Macro global: nivel y variación de cada período, en verde o rojo según el signo.
+  const tonoM = (v, tipo) => v == null || (tipo === "tasa" && Math.round(v) === 0) ? "na" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+  let m = `<thead><tr><th>Activo</th><th>Nivel</th>${GL_PER.map(p => `<th${p === per ? ' class="on"' : ""}>${p}</th>`).join("")}</tr></thead><tbody>`;
+  for (const g of D.macro) {
+    m += `<tr class="grp"><td colspan="${GL_PER.length + 2}">${g.grupo}</td></tr>`;
+    for (const x of g.items) {
+      const s = D.series[x.t];
+      m += `<tr><td>${x.n}<span class="nom">${x.t}</span></td><td>${s ? glPx(s.at(-1)[1], x.tipo) : "—"}</td>${GL_PER.map(p => { const r = glRet(x.t, p, x.tipo); return `<td class="${tonoM(r, x.tipo)}">${glFmtR(r, x.tipo)}</td>`; }).join("")}</tr>`;
+    }
+  }
+  $("glMacro").innerHTML = m + "</tbody>";
+}
+
+// Barras horizontales ordenadas, una por región principal.
+function dibujarBarrasGlobal(el, filas) {
+  if (!el.clientWidth) return;
+  if (!filas.length) { el.innerHTML = `<p class="hint">Sin datos para el período.</p>`; return; }
+  const W = el.clientWidth, fila = 30, T = 14, B_ = 22, H = T + B_ + filas.length * fila;
+  const L = Math.min(250, W * 0.42), R = 64;
+  const vals = filas.map(x => x.r);
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+  const a = lo < 0 ? lo - (hi - lo) * 0.16 : 0, b = hi > 0 ? hi + (hi - lo) * 0.12 : 0;
+  const x = (v) => L + (v - a) / (b - a) * (W - L - R);
+  const tk = niceTicks(lo, hi).filter(t => t >= a && t <= b);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Rendimiento por región">`;
+  for (const t of tk) s += `<line class="gl" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B_}"/><text class="ax" x="${x(t)}" y="${H - 6}" text-anchor="middle">${pct(t, Math.abs(hi - lo) < 0.05 ? 1 : 0)}</text>`;
+  s += `<line class="zero" x1="${x(0)}" x2="${x(0)}" y1="${T}" y2="${H - B_}"/>`;
+  filas.forEach((f, i) => {
+    const v = f.r, yc = T + i * fila + fila / 2, x0 = x(0), x1 = x(v), c = v >= 0 ? "var(--up)" : "var(--down)";
+    s += `<text x="${L - 10}" y="${yc + 4}" text-anchor="end" style="fill:var(--text);font:500 12px var(--mono)">${f.nombre}</text>`;
+    s += `<rect x="${Math.min(x0, x1)}" y="${yc - 9}" width="${Math.max(1, Math.abs(x1 - x0))}" height="18" style="fill:${c};opacity:.8"/>`;
+    s += `<text x="${v >= 0 ? x1 + 6 : x1 - 6}" y="${yc + 4}" text-anchor="${v >= 0 ? "start" : "end"}" style="fill:${c};font:600 11px var(--mono);paint-order:stroke;stroke:var(--panel);stroke-width:3px">${fmtR(v)}</text>`;
+  });
+  el.style.height = `${H}px`;
+  el.innerHTML = s + `</svg>`;
+}
+
+$("glPeriodos").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-p]");
+  if (!b) return;
+  GL.per = b.dataset.p;
+  store.set("gl_per", GL.per);
+  pintarGlobal();
+});
+$("glRefresh").addEventListener("click", cargarGlobal);
+
+/* ======================================================================= */
 /*  Pestañas                                                               */
 /* ======================================================================= */
 
-const TABS = ["mercado", "macro", "bancos", "legislacion", "sectores", "opciones"];
+const TABS = ["global", "macro", "bancos", "legislacion", "sectores", "opciones"];
 let tab = null;
 
 function setTab(t) {
@@ -3934,6 +4125,7 @@ function setTab(t) {
   store.set("tab", t);
   history.replaceState(null, "", "#" + t);
   redibujar();   // los gráficos no se dibujan mientras su pestaña está oculta
+  if (t === "global" && !glPedida) { glPedida = true; cargarGlobal(); }
   if (t === "legislacion" && !legPedida) { legPedida = true; cargarLegislacion(); }
   if (t === "sectores" && !secPedida) { secPedida = true; cargarSectores(); }
   if (t === "sectores") secEnVivo();
@@ -3952,8 +4144,8 @@ armarCinta();
 armarMacro();
 if (store.get("cgr_token")) showApp(); else showLogin();
 const inicial = location.hash.slice(1);
-setTab(TABS.includes(inicial) ? inicial : TABS.includes(store.get("tab")) ? store.get("tab") : "mercado");
-cargarMacro();   // siempre: alimenta la cinta aunque se abra en Mercado
+setTab(TABS.includes(inicial) ? inicial : TABS.includes(store.get("tab")) ? store.get("tab") : "global");
+cargarMacro();   // siempre: alimenta la cinta aunque se abra en Global Macro
 cargarBancos();
 </script>
 </body>
