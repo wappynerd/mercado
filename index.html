@@ -3530,10 +3530,9 @@ function pintarEstrategia() {
     ["Pérdida máxima", `<span class="num">${m.maxP >= 0 ? "Sin pérdida" : plataEst(m.maxP)}</span>`],
     ["Riesgo / beneficio", `<span class="num">${textoRR(m.rr)}</span>${m.rr != null && m.rr !== Infinity ? ` <span class="muted">por cada $ 1 en riesgo, ganás hasta $ ${num(m.rr, 2)}</span>` : ""}`],
     ["Equilibrio", m.be.length ? m.be.map(b => `<span class="num">${num(b, 0)}</span> (${b >= S ? "+" : ""}${pct(b / S - 1, 1)})`).join(" · ") : "—"],
-    ["Rendimiento máximo", m.rend != null ? `<span class="num">${pct(m.rend, 1)}</span> en ${m.dias} días · TNA ${pct(m.tna, 0)}` : "—"],
+    ...(anchoSpread(ctx.patas) ? [] : [["Rendimiento máximo", m.rend != null ? `<span class="num">${pct(m.rend, 1)}</span> en ${m.dias} días · TNA ${pct(m.tna, 0)}` : "—"]]),
     ["Prob. de ganancia", `<span class="num">${pct(m.prob, 0)}</span> al vencimiento`],
     ...(caraBarata(ctx.patas) && !anchoSpread(ctx.patas) ? [["Base cara / barata", `<span class="num">${num(caraBarata(ctx.patas), 2)}</span> veces`]] : []),
-    ...(anchoSpread(ctx.patas) ? [["Costo / ancho", `<span class="num">${pct(Math.abs(m.neto) / anchoSpread(ctx.patas), 1)}</span> de $ ${num(anchoSpread(ctx.patas), 0)}${m.neto < 0 ? " (crédito)" : ""}`]] : []),
   ].map(([k, p]) => `<div class="headline"><div class="k">${k}</div><p>${p}</p></div>`).join("");
   chart($("estChart"), [], { draw: (el) => dibujarEstrategia(el, S, m.be, ctx) });
   pintarHistEst();
@@ -3688,7 +3687,9 @@ function pintarComparador(base = estBase(), ya = false) {
     + Array.from({ length: maxD + 1 }, (_, d) => d).map(d => `<button type="button" class="ghost${d === CMP.ancho ? " on" : ""}" data-a="${d}">${d || "Todas"}</button>`).join("") : "");
   CMP.filas = generarCombinaciones(CMP.tipo, base.S).map(ps => ({ ps, m: estMetricas(estCtx(ps, base)), ancho: anchoSpread(ps), cb: caraBarata(ps) }));
   const conCB = CMP.tipo === "ratio";
-  const conAncho = CMP.filas.some(f => f.ancho);
+  // Bull y bear: solo costo, ganancia y pérdida máximas, riesgo/beneficio, equilibrio y probabilidad.
+  const simple = CMP.tipo === "bull" || CMP.tipo === "bear";
+  const conAncho = !simple && CMP.filas.some(f => f.ancho);
   const val = (f) => {
     const m = f.m;
     switch (CMP.orden) {
@@ -3702,7 +3703,7 @@ function pintarComparador(base = estBase(), ya = false) {
   };
   CMP.filas.sort((a, b) => (CMP.desc ? val(b) - val(a) : val(a) - val(b)) || 0);
   const col = (k, t) => `<th data-o="${k}" class="${CMP.orden === k ? "on" : ""}">${t}${CMP.orden === k ? (CMP.desc ? " ▾" : " ▴") : ""}</th>`;
-  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${conCB ? col("cb", "Cara / barata") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("rr", "Riesgo / benef.")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${conCB ? col("cb", "Cara / barata") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("rr", "Riesgo / benef.")}${col("be", "Equilibrio")}${simple ? "" : col("rend", "Rend. máx") + col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
   CMP.filas.slice(0, 40).forEach((f, i) => {
     const m = f.m;
     h += `<tr data-i="${i}"><td>${basesTexto(f.ps)}</td>
@@ -3710,9 +3711,9 @@ function pintarComparador(base = estBase(), ya = false) {
       <td>${m.maxP >= 0 ? "—" : plataEst(m.maxP)}</td>
       <td>${textoRR(m.rr)}</td>
       <td>${m.be.length ? m.be.map(b => `${num(b, 0)} <span class="muted">(${b >= base.S ? "+" : ""}${pct(b / base.S - 1, 1)})</span>`).join("<br>") : "—"}</td>
-      <td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td><td>${pct(m.prob, 0)}</td></tr>`;
+      ${simple ? "" : `<td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td>`}<td>${pct(m.prob, 0)}</td></tr>`;
   });
-  if (!CMP.filas.length) h += `<tr><td colspan="10" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
+  if (!CMP.filas.length) h += `<tr><td colspan="${simple ? 7 : 10}" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
   ponerHTML($("cmpTabla"), h + "</tbody>");
 }
 
