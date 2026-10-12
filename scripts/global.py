@@ -30,7 +30,7 @@ ACCIONES = [
 MACRO = [
     ("Dólar y tasas", [("DX-Y.NYB", "Dólar (DXY)", "nivel"), ("^TNX", "Tasa 10 años EEUU", "tasa"), ("^VIX", "VIX", "nivel")]),
     ("Commodities", [("GC=F", "Oro", "nivel"), ("SI=F", "Plata", "nivel"), ("CL=F", "Petróleo WTI", "nivel"), ("HG=F", "Cobre", "nivel")]),
-    ("Monedas", [("EURUSD=X", "EUR/USD", "nivel"), ("USDJPY=X", "USD/JPY", "nivel"), ("USDBRL=X", "USD/BRL", "nivel"), ("USDMXN=X", "USD/MXN", "nivel")]),
+    ("Monedas", [("EURUSD=X", "EUR/USD", "nivel"), ("USDJPY=X", "USD/JPY", "nivel"), ("USDBRL=X", "USD/BRL", "nivel"), ("USDMXN=X", "USD/MXN", "nivel"), ("USDARS=X", "USD/ARS oficial", "nivel")]),
     ("Cripto", [("BTC-USD", "Bitcoin", "nivel")]),
 ]
 
