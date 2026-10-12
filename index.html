@@ -3486,8 +3486,12 @@ function estMetricas(ctx) {
   const F = (x) => x <= 0 ? 0 : x === Infinity ? 1 : ncdf((Math.log(x) - mu) / sT);
   const prob = tramos.reduce((a, [l, h]) => a + F(h) - F(l), 0);
   const rend = neto > 0 && Number.isFinite(maxG) && maxG > 0 ? maxG / neto : null;
-  return { neto, maxG, maxP, be, dias, rend, tna: rend != null ? rend * 365 / dias : null, prob };
+  // Relación riesgo/beneficio: cuánto se gana como máximo por cada $ que se puede perder como máximo.
+  // Infinity = ganancia sin tope o pérdida nula; null = pérdida sin tope o sin ganancia posible.
+  const rr = maxP >= 0 ? (maxG > 0 ? Infinity : null) : !Number.isFinite(maxP) || !(maxG > 0) ? null : maxG / -maxP;
+  return { neto, maxG, maxP, be, dias, rend, tna: rend != null ? rend * 365 / dias : null, prob, rr };
 }
+const textoRR = (rr) => rr == null ? "—" : rr === Infinity ? "Sin riesgo" : `1 : ${num(rr, 2)}`;
 // Resultado (todas las patas, en pesos) si el subyacente vale X: al vencimiento o hoy.
 function estValor(X, hoyT, ctx) {
   let v = 0;
@@ -3524,6 +3528,7 @@ function pintarEstrategia() {
     [m.neto >= 0 ? "Costo (débito)" : "Cobrás (crédito)", `<span class="num">$ ${num(Math.abs(m.neto), 0)}</span>`],
     ["Ganancia máxima", `<span class="num">${plataEst(m.maxG)}</span>`],
     ["Pérdida máxima", `<span class="num">${m.maxP >= 0 ? "Sin pérdida" : plataEst(m.maxP)}</span>`],
+    ["Riesgo / beneficio", `<span class="num">${textoRR(m.rr)}</span>${m.rr != null && m.rr !== Infinity ? ` <span class="muted">por cada $ 1 en riesgo, ganás hasta $ ${num(m.rr, 2)}</span>` : ""}`],
     ["Equilibrio", m.be.length ? m.be.map(b => `<span class="num">${num(b, 0)}</span> (${b >= S ? "+" : ""}${pct(b / S - 1, 1)})`).join(" · ") : "—"],
     ["Rendimiento máximo", m.rend != null ? `<span class="num">${pct(m.rend, 1)}</span> en ${m.dias} días · TNA ${pct(m.tna, 0)}` : "—"],
     ["Prob. de ganancia", `<span class="num">${pct(m.prob, 0)}</span> al vencimiento`],
@@ -3688,6 +3693,7 @@ function pintarComparador(base = estBase(), ya = false) {
     const m = f.m;
     switch (CMP.orden) {
       case "neto": return m.neto; case "maxG": return m.maxG; case "maxP": return m.maxP;
+      case "rr": return m.rr ?? -Infinity;
       case "be": return m.be.length ? Math.min(...m.be.map(b => Math.abs(b / base.S - 1))) : Infinity;
       case "ratio": return f.ancho ? Math.abs(m.neto) / f.ancho : Infinity;
       case "cb": return f.cb ?? -Infinity;
@@ -3696,16 +3702,17 @@ function pintarComparador(base = estBase(), ya = false) {
   };
   CMP.filas.sort((a, b) => (CMP.desc ? val(b) - val(a) : val(a) - val(b)) || 0);
   const col = (k, t) => `<th data-o="${k}" class="${CMP.orden === k ? "on" : ""}">${t}${CMP.orden === k ? (CMP.desc ? " ▾" : " ▴") : ""}</th>`;
-  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${conCB ? col("cb", "Cara / barata") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>Bases</th>${col("neto", "Costo / crédito")}${conAncho ? col("ratio", "Costo / ancho") : ""}${conCB ? col("cb", "Cara / barata") : ""}${col("maxG", "Gan. máx")}${col("maxP", "Pérd. máx")}${col("rr", "Riesgo / benef.")}${col("be", "Equilibrio")}${col("rend", "Rend. máx")}${col("tna", "TNA")}${col("prob", "Prob. ganancia")}</tr></thead><tbody>`;
   CMP.filas.slice(0, 40).forEach((f, i) => {
     const m = f.m;
     h += `<tr data-i="${i}"><td>${basesTexto(f.ps)}</td>
       <td>${m.neto >= 0 ? "" : '<span class="up">+</span>'}$ ${num(Math.abs(m.neto), 0)}</td>${conAncho ? `<td>${f.ancho ? `${pct(Math.abs(m.neto) / f.ancho, 1)} <span class="muted">de $ ${num(f.ancho, 0)}</span>` : "—"}</td>` : ""}${conCB ? `<td>${f.cb ? num(f.cb, 2) : "—"}</td>` : ""}<td>${plataEst(m.maxG)}</td>
       <td>${m.maxP >= 0 ? "—" : plataEst(m.maxP)}</td>
+      <td>${textoRR(m.rr)}</td>
       <td>${m.be.length ? m.be.map(b => `${num(b, 0)} <span class="muted">(${b >= base.S ? "+" : ""}${pct(b / base.S - 1, 1)})</span>`).join("<br>") : "—"}</td>
       <td>${m.rend != null ? pct(m.rend, 1) : "—"}</td><td>${m.tna != null ? pct(m.tna, 0) : "—"}</td><td>${pct(m.prob, 0)}</td></tr>`;
   });
-  if (!CMP.filas.length) h += `<tr><td colspan="9" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
+  if (!CMP.filas.length) h += `<tr><td colspan="10" class="muted">Sin combinaciones con puntas en el mercado.</td></tr>`;
   ponerHTML($("cmpTabla"), h + "</tbody>");
 }
 
