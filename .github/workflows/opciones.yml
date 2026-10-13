@@ -1,7 +1,7 @@
 name: Historia de opciones
 
 # Baja las velas de 15 minutos de las opciones (CGR) y las acumula en data/opciones.json, para el costo
-# histórico de las estrategias. Corre de lunes a viernes a media rueda y después del cierre (14:41 y 17:41 de
+# histórico de las estrategias, y guarda la foto diaria de la sonrisa de GGAL en data/sonrisas.json. Corre de lunes a viernes a media rueda y después del cierre (14:41 y 17:41 de
 # Buenos Aires = 17:41 y 20:41 UTC), y también se puede lanzar a mano.
 on:
   schedule:
@@ -26,9 +26,10 @@ jobs:
       - run: python scripts/opciones.py
         env:
           MDH_TOKEN: ${{ secrets.MDH_TOKEN }}
+      - run: python scripts/sonrisa.py
       - name: Guardar si cambió
         run: |
-          git add data/opciones.json
+          git add data/opciones.json data/sonrisas.json
           if git diff --cached --quiet; then
             echo "Sin cambios."
           else
